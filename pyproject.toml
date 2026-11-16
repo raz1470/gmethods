@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gmethods"
+version = "0.1.0"
+description = "G-methods for time-varying confounding, with a simulator that knows the true effects"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Ryan O'Sullivan", email = "raz1470@hotmail.co.uk" }]
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.0",
+    "pandas>=2.2",
+    "scipy>=1.13",
+]
+
+[dependency-groups]
+# `test` is the lean slice CI installs: package deps plus pytest and ruff.
+# `dev` adds Jupyter and plotting for notebooks and article figures.
+test = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+]
+dev = [
+    "ipykernel>=6.0",
+    "jupyter>=1.0",
+    "matplotlib>=3.8",
+    { include-group = "test" },
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gmethods"]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.format]
+exclude = ["notebooks/*.ipynb", "*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# Notebooks are narrative: imports sit next to the cell that uses them.
+"notebooks/*.ipynb" = ["E501", "E402", "I001", "F401", "N806"]
+# Research scripts kept as they were run.
+"tools/**/*.py" = ["N803", "N806", "E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=gmethods --cov-report=term-missing"
