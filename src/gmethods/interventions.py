@@ -62,15 +62,21 @@ class Intervention:
 
     name: str
 
-    def apply(self, a: np.ndarray, u: np.ndarray, names: Sequence[str]) -> np.ndarray:
+    def apply(
+        self, a: np.ndarray, u: np.ndarray, names: Sequence[str], t=None
+    ) -> np.ndarray:
         """Map natural treatment draws ``a`` to the treatment given.
 
         ``u`` holds one uniform draw per unit. Stochastic interventions use
         it so that results are reproducible under common random numbers.
+        ``t`` is the time step (1-based), a scalar or one value per unit.
+        Only time-dependent interventions use it.
         """
         raise NotImplementedError
 
-    def transform_probs(self, p: np.ndarray, names: Sequence[str]) -> np.ndarray:
+    def transform_probs(
+        self, p: np.ndarray, names: Sequence[str], t=None
+    ) -> np.ndarray:
         """Treatment probabilities under the intervention.
 
         ``p`` has one row per unit and one column per level, holding the
@@ -87,10 +93,10 @@ class Natural(Intervention):
 
     name: str = "natural_course"
 
-    def apply(self, a, u, names):
+    def apply(self, a, u, names, t=None):
         return a
 
-    def transform_probs(self, p, names):
+    def transform_probs(self, p, names, t=None):
         return p
 
 
@@ -104,12 +110,12 @@ class Never(Intervention):
 
     levels: tuple[str, ...] = ()
 
-    def apply(self, a, u, names):
+    def apply(self, a, u, names, t=None):
         out = a.copy()
         out[np.isin(out, _codes(self.levels, names))] = NONE
         return out
 
-    def transform_probs(self, p, names):
+    def transform_probs(self, p, names, t=None):
         codes = list(_codes(self.levels, names))
         out = p.copy()
         out[:, NONE] += out[:, codes].sum(axis=1)
@@ -133,18 +139,57 @@ class Scale(Intervention):
         if not 0.0 <= self.factor <= 1.0:
             raise ValueError("factor must be in [0, 1]")
 
-    def apply(self, a, u, names):
+    def apply(self, a, u, names, t=None):
         out = a.copy()
         drop = np.isin(out, _codes(self.levels, names)) & (u >= self.factor)
         out[drop] = NONE
         return out
 
-    def transform_probs(self, p, names):
+    def transform_probs(self, p, names, t=None):
         codes = list(_codes(self.levels, names))
         out = p.copy()
         freed = out[:, codes].sum(axis=1) * (1.0 - self.factor)
         out[:, codes] *= self.factor
         out[:, NONE] += freed
+        return out
+
+
+@dataclass(frozen=True)
+class Windowed(Intervention):
+    """Remove treatment levels only at some time steps.
+
+    ``windows`` is a tuple of ``(first, last, levels)``: at time steps
+    ``first`` to ``last`` (inclusive, 1-based) a natural draw of any of
+    ``levels`` becomes the reference level. Outside every window the
+    treatment follows its natural course. Used for the time-ordered
+    attribution, where handoffs are removed up to a turn and left natural
+    after it.
+    """
+
+    windows: tuple[tuple[int, int, tuple[str, ...]], ...] = ()
+
+    def _mask(self, a_or_shape, names, t):
+        if t is None:
+            raise ValueError(f"{self.name} needs the time step t")
+        t = np.broadcast_to(np.asarray(t), np.shape(a_or_shape)[:1])
+        masks = []
+        for first, last, levels in self.windows:
+            masks.append(((t >= first) & (t <= last), _codes(levels, names)))
+        return masks
+
+    def apply(self, a, u, names, t=None):
+        out = a.copy()
+        for in_window, codes in self._mask(a, names, t):
+            out[in_window & np.isin(out, codes)] = NONE
+        return out
+
+    def transform_probs(self, p, names, t=None):
+        out = p.copy()
+        for in_window, codes in self._mask(p, names, t):
+            codes = list(codes)
+            moved = out[:, codes].sum(axis=1) * in_window
+            out[:, NONE] += moved
+            out[np.ix_(in_window, codes)] = 0.0
         return out
 
 

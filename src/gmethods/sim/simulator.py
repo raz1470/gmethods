@@ -341,7 +341,7 @@ class ChatSimulator:
             cdf = np.cumsum(probs, axis=0)
             a_nat = (draws.u_handoff[t][None, :] > cdf).sum(axis=0)
             a_nat = np.minimum(a_nat, N_LEVELS - 1)
-            a = intervention.apply(a_nat, draws.u_interv[t], HANDOFF_TYPES)
+            a = intervention.apply(a_nat, draws.u_interv[t], HANDOFF_TYPES, t=t + 1)
 
             # 3. Complaint and 4. chat end hazards.
             agents_so_far = 1 + cum[:, 1:].sum(axis=1)

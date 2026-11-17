@@ -113,7 +113,9 @@ class IPW:
         """Cumulative weight of each panel row, through its own treatment."""
         spec = self.spec
         p = self.probs_
-        p_star = intervention.transform_probs(p, spec.levels)
+        p_star = intervention.transform_probs(
+            p, spec.levels, t=self.work_[spec.time_col].to_numpy()
+        )
         rows = np.arange(len(p))
         num, den = p_star[rows, self.a_], p[rows, self.a_]
         # Rows the intervention leaves alone get weight 1 even when the

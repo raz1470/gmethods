@@ -214,7 +214,9 @@ class LTMLE:
     def _weights(self, iv: Intervention) -> np.ndarray:
         spec = self.spec
         p = self.probs_
-        p_star = iv.transform_probs(p, spec.levels)
+        p_star = iv.transform_probs(
+            p, spec.levels, t=self.work_[spec.time_col].to_numpy()
+        )
         rows = np.arange(len(p))
         num, den = p_star[rows, self.a_], p[rows, self.a_]
         ratio = np.where((num == den) & (num > 0), 1.0, num / np.maximum(den, 1e-12))
@@ -230,7 +232,11 @@ class LTMLE:
     def _policy(self, iv: Intervention) -> np.ndarray:
         """Distribution of the treatment given under the policy, per row."""
         n_lv = len(self.spec.levels)
-        return iv.transform_probs(np.eye(n_lv)[self.a_], self.spec.levels)
+        return iv.transform_probs(
+            np.eye(n_lv)[self.a_],
+            self.spec.levels,
+            t=self.work_[self.spec.time_col].to_numpy(),
+        )
 
     def _one(self, iv: Intervention):
         spec = self.spec
@@ -346,28 +352,38 @@ class LTMLE:
             psi, ic, unit_ids = self._one(iv)
             risks[iv.name] = psi
             eifs[iv.name] = ic
+        self.eif_ = eifs
+        self._unit_ids = unit_ids
         ci, se = {}, {}
         if self.target and reference in eifs:
-            cl = (
-                pd.Series(self.cluster_, index=self.work_[self.spec.id_col])
-                .groupby(level=0)
-                .first()
-                .loc[unit_ids]
-                .to_numpy()
-            )
-            n = len(unit_ids)
             zq = norm.ppf(0.5 + level / 2)
-            for name, ic in eifs.items():
-                diff = ic - eifs[reference]
-                s = (
-                    np.sqrt(np.sum(pd.Series(diff).groupby(cl).sum().to_numpy() ** 2))
-                    / n
-                )
+            for name in eifs:
+                s_ = self.contrast_se({name: 1.0, reference: -1.0})
                 rd = risks[name] - risks[reference]
-                se[name] = float(s)
-                ci[name] = (rd - zq * s, rd + zq * s)
+                se[name] = s_
+                ci[name] = (rd - zq * s_, rd + zq * s_)
         self.se_ = se
         return RiskTable(risks=risks, ci=ci, label=self.label)
+
+    def contrast_se(self, coefs: dict[str, float]) -> float:
+        """Standard error of a linear combination of regime risks.
+
+        ``coefs`` maps regime names from the last :meth:`estimate` call to
+        coefficients, for example ``{"a": 1, "b": -1}`` for a risk
+        difference. Influence functions are summed within clusters.
+        """
+        if not self.target:
+            raise RuntimeError("standard errors need the targeting step")
+        ic = sum(c * self.eif_[name] for name, c in coefs.items())
+        cl = (
+            pd.Series(self.cluster_, index=self.work_[self.spec.id_col])
+            .groupby(level=0)
+            .first()
+            .loc[self._unit_ids]
+            .to_numpy()
+        )
+        by_cluster = pd.Series(ic).groupby(cl).sum().to_numpy()
+        return float(np.sqrt(np.sum(by_cluster**2)) / len(self._unit_ids))
 
 
 class ICE(LTMLE):
@@ -376,7 +392,7 @@ class ICE(LTMLE):
     def __init__(
         self,
         spec: PanelSpec | None = None,
-        learner: Learner = "stack",
+        learner: Learner = "linear",
         folds: int = 2,
         **kw,
     ):

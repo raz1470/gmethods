@@ -175,7 +175,7 @@ class PooledHazard:
         u = rng.random(len(self.panel_))
         codes = self.a_.map({lv: i for i, lv in enumerate(HANDOFF_TYPES)}).to_numpy()
         for iv in interventions:
-            new = iv.apply(codes, u, HANDOFF_TYPES)
+            new = iv.apply(codes, u, HANDOFF_TYPES, t=self.panel_["turn"].to_numpy())
             a = pd.Series(np.array(HANDOFF_TYPES)[new])
             X = self._X(self.panel_, a).reindex(columns=self.columns_, fill_value=0.0)
             h = self.model_.predict_proba(X.to_numpy())[:, 1]

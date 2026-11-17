@@ -93,3 +93,29 @@ class TestConstructors:
     def test_scale_factor_range(self):
         with pytest.raises(ValueError):
             iv.scale("transfer", factor=1.5)
+
+
+class TestWindowed:
+    w = iv.Windowed(
+        name="w", windows=((1, 2, ("transfer", "escalation")), (3, 3, ("requeue",)))
+    )
+
+    def test_apply_by_turn(self):
+        a = np.array([1, 2, 3, 3, 1])
+        t = np.array([1, 2, 2, 3, 4])
+        out = self.w.apply(a, np.zeros(5), HANDOFF_TYPES, t=t)
+        np.testing.assert_array_equal(out, [0, 0, 3, 0, 1])
+
+    def test_scalar_turn(self):
+        out = self.w.apply(np.array([1, 3]), np.zeros(2), HANDOFF_TYPES, t=3)
+        np.testing.assert_array_equal(out, [1, 0])
+
+    def test_transform_probs_by_turn(self):
+        p = np.full((2, 5), 0.2)
+        out = self.w.transform_probs(p, HANDOFF_TYPES, t=np.array([1, 4]))
+        np.testing.assert_allclose(out[0], [0.6, 0, 0, 0.2, 0.2])
+        np.testing.assert_allclose(out[1], p[1])
+
+    def test_needs_turn(self):
+        with pytest.raises(ValueError):
+            self.w.apply(np.array([1]), np.zeros(1), HANDOFF_TYPES)

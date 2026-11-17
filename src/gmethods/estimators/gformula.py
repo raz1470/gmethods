@@ -285,7 +285,7 @@ class GFormula:
             p = predict_proba_full(self.models_["_treatment"], X, n_lv)
             cdf = np.cumsum(p, axis=1)
             a_nat = np.minimum((u_a[:, None] > cdf).sum(axis=1), n_lv - 1)
-            a = iv.apply(a_nat, u_iv, spec.levels)
+            a = iv.apply(a_nat, u_iv, spec.levels, t=t + 1)
             feats.update(treatment_onehot(a, spec.levels))
 
             X = stack(feats, self.names_["_outcome"])
