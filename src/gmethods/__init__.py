@@ -7,6 +7,7 @@ The package has two parts:
 """
 
 from . import interventions
+from .estimators import IPW, CountRegression, GFormula, PanelSpec, PooledHazard
 from .interventions import HANDOFF_TYPES
 from .results import RiskTable
 from .sim import ChatSimulator, Scenario, SimData
@@ -15,7 +16,12 @@ __version__ = "0.1.0"
 
 __all__ = [
     "HANDOFF_TYPES",
+    "IPW",
     "ChatSimulator",
+    "CountRegression",
+    "GFormula",
+    "PanelSpec",
+    "PooledHazard",
     "RiskTable",
     "Scenario",
     "SimData",
