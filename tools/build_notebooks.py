@@ -155,7 +155,7 @@ null.to_frame()["rd"].round(6)
 def nb02():
     return [
         md("""
-# 02. Naive estimates vs the g-formula
+# 02. Naive estimates vs g-methods
 
 One simulated dataset, every estimator, compared with the truth.
 
@@ -172,11 +172,15 @@ One simulated dataset, every estimator, compared with the truth.
   forward under each intervention.
 - **IPW.** Weights by the treatment model only. A cross-check that relies on
   different modelling assumptions.
+- **LTMLE.** Sequential outcome regressions, targeted with the IPW weights.
+  Doubly robust, with influence-function intervals. The recommended estimator.
 """),
         code("""
 import pandas as pd
 
-from gmethods import IPW, ChatSimulator, CountRegression, GFormula, PooledHazard, Scenario
+from gmethods import (
+    IPW, LTMLE, ChatSimulator, CountRegression, GFormula, PooledHazard, Scenario,
+)
 from gmethods import interventions as iv
 from gmethods.estimators import natural_course_check, positivity_table, weight_summary
 
@@ -187,12 +191,14 @@ pd.set_option("display.width", 120)
 sim = ChatSimulator(Scenario.preset("baseline"))
 data = sim.simulate(n_chats=50_000, seed=1)
 regimes = iv.standard_set()
-truth = sim.true_risks(regimes, n_mc=500_000)
+halving = iv.scale_set()
+truth = sim.true_risks(regimes + halving[1:], n_mc=500_000)
 """),
         code("""
 fast = {"max_iter": 100, "learning_rate": 0.1}
 gf = GFormula(learner_params=fast).fit(data.panel)
 ipw = IPW(learner_params=fast).fit(data.panel)
+ltmle = LTMLE().fit(data.panel)
 tables = {
     "count, all handoffs": CountRegression("all").fit(data.chats).estimate(regimes),
     "count, before complaint or all": CountRegression("before_complaint_or_all")
@@ -202,9 +208,10 @@ tables = {
     "pooled hazard": PooledHazard().fit(data.panel).estimate(regimes),
     "IPW": ipw.estimate(regimes),
     "g-formula": gf.estimate(regimes, n_mc=20_000),
+    "LTMLE": ltmle.estimate(regimes),
 }
 rd = pd.DataFrame({k: t.to_frame()["rd"] for k, t in tables.items()})
-rd.insert(0, "truth", truth.to_frame()["rd"])
+rd.insert(0, "truth", truth.to_frame()["rd"].loc[rd.index])
 (rd.drop(index="natural_course") * 1000).round(2)
 """),
         md("Risk differences per 1,000 chats against the natural course."),
@@ -212,7 +219,9 @@ rd.insert(0, "truth", truth.to_frame()["rd"])
 import numpy as np
 
 shown = [r for r in rd.index if r != "natural_course"]
-est = [c for c in rd.columns if c != "truth"]
+# Six estimators keep the categorical palette within its validated range.
+est = ["count, all handoffs", "count, before complaint or all", "pooled hazard",
+       "IPW", "g-formula", "LTMLE"]
 fig, ax = plt.subplots(figsize=(9.5, 4.2))
 y = np.arange(len(shown))
 step = 0.11
@@ -231,6 +240,18 @@ handles.append(plt.Line2D([], [], color=INK, lw=2.5))
 labels.append("truth")
 ax.legend(handles, labels, loc="upper left", bbox_to_anchor=(1.01, 1), fontsize=8)
 plt.tight_layout()
+"""),
+        md("""
+## LTMLE intervals, and halving instead of removing
+
+"Never transfer" asks about chats that stay with the wrong team, which the
+data barely contains. Halving each handoff type needs far weaker positivity.
+LTMLE gives a 95% interval for every regime from its influence function.
+"""),
+        code("""
+table = ltmle.estimate(regimes + halving[1:]).to_frame()
+table["truth"] = truth.to_frame()["rd"]
+(table[["rd", "rd_low", "rd_high", "truth"]].drop(index="natural_course") * 1000).round(2)
 """),
         md("""
 ## Diagnostics
@@ -282,28 +303,31 @@ pd.set_option("display.width", 120)
 """),
         code(STYLE),
         code("""
-summary = summarise(Path("../results/recovery_baseline.csv"),
-                    Path("../results/truth_baseline.csv"))
-print("replicates:", int(summary["reps"].min()))
+files = sorted(Path("../results").glob("recovery_baseline_*.csv"))
+full = summarise(files, Path("../results/truth_baseline.csv"))
+summary = full.xs(50_000, level="n_chats")
+print(summary["reps"].groupby("estimator").max().to_string())
 (summary[["rd_true", "rd_mean", "bias", "sd", "rmse"]] * 1000).round(2)
 """),
         md("Root mean squared error per 1,000 chats, by estimator and regime."),
         code("""
 rmse = (summary["rmse"] * 1000).unstack("estimator")
-order = rmse.mean().sort_values().index
+# Six estimators keep the categorical palette within its validated range.
+shown_est = ["ltmle", "gformula", "ipw", "ice", "pooled_hazard", "count_all"]
+order = rmse[shown_est].mean().sort_values().index
 rmse = rmse[order]
 fig, ax = plt.subplots(figsize=(9.5, 4))
 y = np.arange(len(rmse.index))
 step = 0.11
 for j, name in enumerate(order):
     off = (j - (len(order) - 1) / 2) * step
-    ax.scatter(rmse[name], y + off, s=30, color=SERIES[j % len(SERIES)], label=name,
+    ax.scatter(rmse[name], y + off, s=30, color=SERIES[j], label=name,
                edgecolor="white", linewidth=1, zorder=3)
 ax.set_yticks(y, [s.replace("_", " ") for s in rmse.index])
 ax.invert_yaxis()
 ax.set_xlim(left=0)
 ax.set_xlabel("RMSE of the risk difference, per 1,000 chats")
-ax.set_title(f"Error against the truth across {int(summary['reps'].min())} datasets", loc="left")
+ax.set_title("Error against the truth, 50,000 chats per dataset", loc="left")
 ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1), fontsize=8)
 plt.tight_layout()
 """),
@@ -312,8 +336,30 @@ Relative bias: the mean estimate as a share of the true effect. 100% means
 unbiased on average.
 """),
         code("""
-rel = (summary["rd_mean"] / summary["rd_true"] * 100).unstack("estimator")[order]
+rel = (summary["rd_mean"] / summary["rd_true"] * 100).unstack("estimator")
 rel.round(0)
+"""),
+        md("""
+Coverage of LTMLE's 95% influence-function intervals: the share of datasets
+whose interval contains the true effect.
+"""),
+        code("""
+summary.xs("ltmle", level="estimator")[["coverage"]].round(2)
+"""),
+        md("""
+## Larger samples
+
+LTMLE and the g-formula at 200,000 chats. Bias that stays as the sample
+grows comes from the method; bias that shrinks came from small samples.
+"""),
+        code("""
+sizes = sorted(full.index.get_level_values("n_chats").unique())
+if len(sizes) > 1:
+    keep = full.loc[full.index.get_level_values("estimator").isin(["gformula", "ltmle"])]
+    out = (keep["rd_mean"] / keep["rd_true"] * 100).unstack("n_chats").round(0)
+    out["rmse_ratio"] = (keep["rmse"].unstack("n_chats")[sizes[-1]]
+                         / keep["rmse"].unstack("n_chats")[sizes[0]]).round(2)
+    display(out)
 """),
     ]
 
@@ -322,7 +368,7 @@ def main():
     OUT.mkdir(exist_ok=True)
     for name, cells in [
         ("01_simulator", nb01()),
-        ("02_naive_vs_gformula", nb02()),
+        ("02_estimators", nb02()),
         ("03_recovery", nb03()),
     ]:
         nb = nbf.v4.new_notebook()
