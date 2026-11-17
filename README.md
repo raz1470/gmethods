@@ -93,6 +93,7 @@ and `--summarise`.
 1. [`01_simulator`](notebooks/01_simulator.ipynb): the data, one chat end to end, the true effects.
 2. [`02_estimators`](notebooks/02_estimators.ipynb): every estimator on one dataset, LTMLE intervals, diagnostics.
 3. [`03_recovery`](notebooks/03_recovery.ipynb): bias and RMSE across repeated datasets.
+4. [`04_attribution`](notebooks/04_attribution.ipynb): share of complaints caused by handoffs, and the marginal split by type.
 
 ## Docs
 

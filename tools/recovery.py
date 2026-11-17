@@ -33,7 +33,11 @@ from gmethods import (
 from gmethods import interventions as iv
 
 FAST = {"max_iter": 100, "learning_rate": 0.1}
-REGIMES = iv.standard_set() + iv.scale_set()[1:]
+REGIME_SETS = {
+    "standard": iv.standard_set() + iv.scale_set()[1:],
+    "marginal": iv.scale_set(factor=0.9),
+}
+REGIMES = REGIME_SETS["standard"]
 ALL = [
     "gformula",
     "ice",
@@ -47,10 +51,20 @@ ALL = [
 
 
 def truth_table(preset: str, path: Path, n_mc: int) -> pd.DataFrame:
-    if path.exists():
-        return pd.read_csv(path, index_col="regime")
+    """Truth for the current regimes, adding any regime the file lacks.
+
+    The truth engine uses the same seed and sample for every call, so a
+    natural course computed later matches the one already stored.
+    """
+    old = pd.read_csv(path, index_col="regime") if path.exists() else None
+    missing = [r for r in REGIMES if old is None or r.name not in old.index]
+    if not missing:
+        return old
     sim = ChatSimulator(Scenario.preset(preset))
-    frame = sim.true_risks(REGIMES, n_mc=n_mc).to_frame()
+    need = [iv.natural(), *(r for r in missing if r.name != "natural_course")]
+    frame = sim.true_risks(need, n_mc=n_mc).to_frame()
+    if old is not None:
+        frame = pd.concat([old, frame.drop(index="natural_course")])
     path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(path)
     return frame
@@ -142,9 +156,12 @@ def main():
     ap.add_argument("--truth-mc", type=int, default=1_000_000)
     ap.add_argument("--estimators", nargs="+", default=ALL)
     ap.add_argument("--max-minutes", type=float, default=9.0)
+    ap.add_argument("--regimes", choices=sorted(REGIME_SETS), default="standard")
     ap.add_argument("--tag", default="all", help="Suffix for the output file")
     ap.add_argument("--summarise", action="store_true")
     args = ap.parse_args()
+    global REGIMES
+    REGIMES = REGIME_SETS[args.regimes]
     truth_path = Path(f"results/truth_{args.preset}.csv")
     if args.summarise:
         files = sorted(Path("results").glob(f"recovery_{args.preset}_*.csv"))

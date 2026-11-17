@@ -35,6 +35,12 @@ Truth in `baseline`, 10% fewer of each type, complaints saved per 1,000
 chats: escalation 0.36 (45%), requeue 0.36 (46%), shift change 0.04 (5%),
 transfer 0.03 (4%); all together 0.75.
 
+Across 20 datasets of 50,000 chats, LTMLE's estimates average 95% to 110%
+of the truth for every type, and its 95% intervals cover the truth in 90%
+to 100% of datasets. Escalation and requeue are clearly separated from zero;
+shift change and transfer are not (standard errors of 0.07 and 0.05 per
+1,000 against effects of 0.04 and 0.03).
+
 The split describes the margin today. It does not say what share of the
 27% each type accounts for if handoffs were removed entirely: that path
 crosses histories the data rarely contains.

@@ -1,6 +1,6 @@
 """Build the demo notebooks from source cells.
 
-    uv run python tools/build_notebooks.py
+    uv run python tools/build_notebooks.py          # all, or e.g. "04"
     uv run jupyter nbconvert --to notebook --execute --inplace notebooks/*.ipynb
 
 Notebook 03 reads results/recovery_baseline.csv, which comes from
@@ -364,13 +364,121 @@ if len(sizes) > 1:
     ]
 
 
-def main():
+def nb04():
+    return [
+        md("""
+# 04. Attributing complaints to handoff types
+
+Two numbers answer "how much do handoffs drive complaints?":
+
+1. **The headline:** the share of complaints handoffs cause, from LTMLE's
+   "no handoffs at all" regime. The rest would happen anyway.
+2. **The split:** complaints each handoff type would save if it were 10%
+   rarer than today. The type effects add up to the joint effect, up to a
+   small interaction that is reported.
+
+The time-ordered split is shown at the end for comparison.
+"""),
+        code("""
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from gmethods import LTMLE, ChatSimulator, Scenario
+from gmethods import interventions as iv
+from gmethods.attribution import attribute, attribute_marginal, marginal_from_risks
+
+sys.path.insert(0, str(Path("..").resolve() / "tools"))
+from recovery import summarise
+
+pd.set_option("display.width", 120)
+"""),
+        code(STYLE),
+        code("""
+sim = ChatSimulator(Scenario.preset("baseline"))
+data = sim.simulate(n_chats=50_000, seed=1)
+model = LTMLE().fit(data.panel)
+truth = pd.read_csv("../results/truth_baseline.csv", index_col="regime")
+"""),
+        md("## The headline"),
+        code("""
+table = model.estimate([iv.natural(), iv.never_any()])
+risk, rd = table.risks["natural_course"], -table.rd("never_any")
+low, high = (-x for x in table.ci["never_any"][::-1])
+true_paf = -truth.loc["never_any", "rd"] / truth.loc["natural_course", "risk"]
+print(f"complaints per 1,000 chats: {risk * 1000:.1f}")
+print(f"caused by handoffs: {rd * 1000:.1f} (95% CI {low * 1000:.1f} to {high * 1000:.1f})")
+print(f"share of all complaints: {rd / risk:.0%} (truth {true_paf:.0%})")
+"""),
+        md("## The marginal split"),
+        code("""
+est = attribute_marginal(model, factor=0.9)
+true = marginal_from_risks(truth["risk"].to_dict(), factor=0.9)
+true_cols = true[["per_1000", "share"]].add_suffix("_true")
+split = est[["per_1000", "se_per_1000", "share"]].join(true_cols)
+split.round(3)
+"""),
+        code("""
+types = ["escalation", "requeue", "shift_change", "transfer"]
+fig, ax = plt.subplots(figsize=(7.5, 3.2))
+y = np.arange(len(types))
+ax.errorbar(est.loc[types, "per_1000"], y, xerr=1.96 * est.loc[types, "se_per_1000"],
+            fmt="o", color=SERIES[0], ms=7, lw=2, capsize=0, label="LTMLE, 95% CI")
+ax.scatter(true.loc[types, "per_1000"], y, marker="|", s=400, color=INK, lw=2.5,
+           label="truth", zorder=4)
+ax.set_yticks(y, [t.replace("_", " ") for t in types])
+ax.invert_yaxis()
+ax.axvline(0, color=MUTED, lw=0.8)
+ax.set_xlabel("complaints saved per 1,000 chats, type made 10% rarer")
+ax.set_title("Which handoff type to reduce first", loc="left")
+ax.legend(loc="lower right", fontsize=8)
+plt.tight_layout()
+"""),
+        md("""
+## Recovery across datasets
+
+LTMLE's marginal split across 20 datasets of 50,000 chats. Regenerate with
+`uv run python tools/recovery.py --regimes marginal --estimators ltmle --tag marginal`.
+"""),
+        code("""
+files = sorted(Path("../results").glob("recovery_baseline_n50000_marginal_*.csv"))
+rec = summarise(files, Path("../results/truth_baseline.csv")).xs(50_000, level="n_chats")
+rec = rec.xs("ltmle", level="estimator")
+out = rec[["rd_true", "rd_mean", "sd", "rmse"]] * -1000
+out[["sd", "rmse"]] *= -1
+out["coverage"] = rec["coverage"]
+out["reps"] = rec["reps"]
+out.round(3)
+"""),
+        md("""
+## For comparison: the time-ordered split
+
+Credit goes turn by turn, each turn valued with every earlier handoff
+already removed. It splits the whole attributable risk, but later types are
+valued in a world where chats run longer than they do today, and LTMLE
+estimates it far less precisely. Truth from one million simulated chats:
+"""),
+        code("""
+risks = pd.read_csv("../results/attribution_truth_baseline.csv", index_col="regime")
+time_ordered = attribute(risks["risk"].to_dict(), label="truth").summary()
+time_ordered[["per_1000", "share_of_handoff_complaints"]].round(3)
+"""),
+    ]
+
+
+def main(only: list[str]):
+    """Build every notebook, or only those whose name starts with ``only``."""
     OUT.mkdir(exist_ok=True)
     for name, cells in [
         ("01_simulator", nb01()),
         ("02_estimators", nb02()),
         ("03_recovery", nb03()),
+        ("04_attribution", nb04()),
     ]:
+        if only and not any(name.startswith(o) for o in only):
+            continue
         nb = nbf.v4.new_notebook()
         nb["cells"] = cells
         nb["metadata"]["kernelspec"] = {
@@ -383,4 +491,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    main(sys.argv[1:])
