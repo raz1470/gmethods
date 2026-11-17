@@ -13,6 +13,7 @@ requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.0",
     "pandas>=2.2",
+    "scikit-learn>=1.5",
     "scipy>=1.13",
 ]
 
@@ -28,6 +29,8 @@ dev = [
     "ipykernel>=6.0",
     "jupyter>=1.0",
     "matplotlib>=3.8",
+    "nbconvert>=7.0",
+    "nbformat>=5.9",
     { include-group = "test" },
 ]
 
@@ -42,8 +45,15 @@ exclude = ["notebooks/*.ipynb", "*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "RUF"]
+# X (design matrix), T (horizon) and F (frustration) follow the maths.
+# _per_handoff returns a dataclass field() with a default factory, which
+# RUF009 cannot tell apart from a shared mutable default.
+
+[tool.ruff.lint.pep8-naming]
+extend-ignore-names = ["X", "T", "F", "_X"]
 
 [tool.ruff.lint.per-file-ignores]
+"src/gmethods/sim/scenario.py" = ["RUF009"]
 # Notebooks are narrative: imports sit next to the cell that uses them.
 "notebooks/*.ipynb" = ["E501", "E402", "I001", "F401", "N806"]
 # Research scripts kept as they were run.
