@@ -1,4 +1,21 @@
-"""Time-ordered attribution of complaints to handoff types.
+"""Attribution of complaints to handoff types.
+
+Two splits are offered. The marginal split (:func:`attribute_marginal`) is
+the recommended one; the time-ordered split is kept for comparison.
+
+The marginal split asks, starting from how things run today: if each
+handoff type happened a little less often (10% fewer by default), how many
+complaints would each save? Each type's effect includes the later handoffs
+it triggers, because those are left to respond naturally. For a small
+reduction the overlap between types is second order (a chat would need two
+of its handoffs removed at once), so the type effects add up to the effect
+of reducing every type together, up to a small interaction that is
+reported. Only the natural course has to be supported by the data, so the
+weights stay near one and the estimates are stable. This is the start of
+the Aumann-Shapley path from today towards no handoffs.
+
+Time-ordered split
+------------------
 
 Handoffs cause only part of all complaints. The part they cause is the
 difference between the natural course and "no handoffs at all"; as a share
@@ -36,6 +53,7 @@ import numpy as np
 import pandas as pd
 
 from .interventions import HANDOFF_TYPES, Intervention, Windowed, natural
+from .interventions import scale_set as iv_scale_set
 
 DEFAULT_BUCKETS: tuple[tuple[int, int], ...] = (
     *((t, t) for t in range(1, 26)),
@@ -220,3 +238,49 @@ def attribute_ltmle(
         se["all handoffs"] = model.contrast_se({"natural_course": 1.0, last: -1.0})
         out.se = se
     return out
+
+
+def attribute_marginal(model, factor: float = 0.9, names=HANDOFF_TYPES) -> pd.DataFrame:
+    """Marginal split: complaints saved by making each type ``1 - factor`` rarer.
+
+    ``model`` is a fitted :class:`~gmethods.LTMLE` or any object whose
+    ``estimate(regimes)`` returns a :class:`~gmethods.RiskTable`; a
+    :class:`~gmethods.ChatSimulator` works through ``true_risks`` via
+    :func:`marginal_from_risks`.
+
+    Returns one row per type plus ``all types together`` and
+    ``interaction`` (the joint effect minus the sum of the type effects).
+    ``share`` divides each type's effect by their sum, so the shares add up
+    to 1. With LTMLE, ``se_per_1000`` comes from the influence functions.
+    """
+    regimes = iv_scale_set(names, factor)
+    table = model.estimate(regimes)
+    out = marginal_from_risks(dict(table.risks), factor, names)
+    se = getattr(model, "se_", {})
+    if se:
+        out["se_per_1000"] = [se.get(r.name, np.nan) * 1000 for r in regimes[1:]] + [
+            np.nan
+        ]
+    return out
+
+
+def marginal_from_risks(
+    risks: dict[str, float], factor: float = 0.9, names=HANDOFF_TYPES
+) -> pd.DataFrame:
+    """The marginal split from a table of regime risks (for example the truth)."""
+    regimes = iv_scale_set(names, factor)
+    base = risks["natural_course"]
+    saved = {r.name: base - risks[r.name] for r in regimes[1:]}
+    types = list(saved)[:-1]
+    joint = saved[regimes[-1].name]
+    total = sum(saved[k] for k in types)
+    rows = {
+        name.removeprefix("scale_").removesuffix(f"_{factor:g}"): {
+            "per_1000": saved[name] * 1000,
+            "share": saved[name] / total if total else np.nan,
+        }
+        for name in types
+    }
+    rows["all types together"] = {"per_1000": joint * 1000, "share": np.nan}
+    rows["interaction"] = {"per_1000": (joint - total) * 1000, "share": np.nan}
+    return pd.DataFrame(rows).T

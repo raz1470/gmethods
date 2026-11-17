@@ -71,3 +71,33 @@ def test_ltmle_attribution(small_data):
         "shift_change",
         "all handoffs",
     }
+
+
+class TestMarginal:
+    def test_shares_add_up_and_interaction_small(self):
+        from gmethods.attribution import marginal_from_risks
+        from gmethods.interventions import scale_set
+
+        sim = ChatSimulator(Scenario.preset("baseline"))
+        risks = sim.true_risks(scale_set(factor=0.9), n_mc=50_000).risks
+        out = marginal_from_risks(dict(risks), factor=0.9)
+        types = out.drop(index=["all types together", "interaction"])
+        assert types["share"].sum() == pytest.approx(1.0)
+        joint = out.loc["all types together", "per_1000"]
+        assert abs(out.loc["interaction", "per_1000"]) < 0.15 * abs(joint)
+
+    def test_with_ltmle(self, small_data):
+        from gmethods import LTMLE
+        from gmethods.attribution import attribute_marginal
+
+        from .conftest import FAST
+
+        model = LTMLE(learner_params=FAST).fit(small_data.panel)
+        out = attribute_marginal(model)
+        assert list(out.index[:4]) == [
+            "transfer",
+            "escalation",
+            "requeue",
+            "shift_change",
+        ]
+        assert (out["se_per_1000"].iloc[:4] > 0).all()

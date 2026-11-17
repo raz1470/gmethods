@@ -1,19 +1,47 @@
 # Attributing complaints to handoff types
 
-Handoffs cause only part of all complaints. `gmethods.attribution` splits
-that part across handoff types so the shares add up to it exactly.
+Handoffs cause only part of all complaints: 27% in the `baseline`
+scenario. Report that share as the headline, from LTMLE's "no handoffs at
+all" regime. Then split it across handoff types with the marginal split.
+
+## Marginal split (recommended)
 
 ```python
 from gmethods import LTMLE
-from gmethods.attribution import attribute_ltmle
+from gmethods.attribution import attribute_marginal
 
 model = LTMLE().fit(data.panel)
-att = attribute_ltmle(model)
-att.summary()          # per type: per 1,000 chats, share of handoff complaints, share of all
-att.by_bucket          # credit by turn and type
+attribute_marginal(model, factor=0.9)   # each type made 10% rarer
 ```
 
-## What adds up to what
+Starting from how things run today, it asks how many complaints each
+handoff type would save if it happened 10% less often.
+
+- Each type's effect includes the later handoffs it triggers, because those
+  respond naturally. A transfer that would have led to an escalation gets
+  that credit, and the escalation still gets credit for its own direct harm.
+- For a small reduction the types barely overlap (a chat would need two of
+  its handoffs removed at once), so the effects add up. The leftover
+  `interaction` is reported: 4% of the joint effect in `baseline`.
+- Only today's handoff pattern has to be in the data. The weights stay near
+  one, so LTMLE estimates are stable: in `baseline` with 50,000 chats the
+  escalation and requeue effects have standard errors of about 11% of
+  their size, against 70% for the time-ordered split.
+- It is a business question that can be acted on: which type to reduce
+  first. It is also the start of the Aumann-Shapley path from today towards
+  no handoffs.
+
+Truth in `baseline`, 10% fewer of each type, complaints saved per 1,000
+chats: escalation 0.36 (45%), requeue 0.36 (46%), shift change 0.04 (5%),
+transfer 0.03 (4%); all together 0.75.
+
+The split describes the margin today. It does not say what share of the
+27% each type accounts for if handoffs were removed entirely: that path
+crosses histories the data rarely contains.
+
+## Time-ordered split (for comparison)
+
+### What adds up to what
 
 | Quantity | Definition |
 | --- | --- |
@@ -25,7 +53,7 @@ The rest of the complaints would happen without any handoff. They are not
 attributed to anything: task type or friction history are not things to
 switch off, so there is no causal question to split them by.
 
-## The time-ordered split
+### How it works
 
 Let g_j be "no handoffs in turn buckets 1 to j, natural course after". The
 attributable risk telescopes over these policies:

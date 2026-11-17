@@ -358,6 +358,9 @@ class LTMLE:
         if self.target and reference in eifs:
             zq = norm.ppf(0.5 + level / 2)
             for name in eifs:
+                if name == reference:
+                    se[name], ci[name] = 0.0, (0.0, 0.0)
+                    continue
                 s_ = self.contrast_se({name: 1.0, reference: -1.0})
                 rd = risks[name] - risks[reference]
                 se[name] = s_

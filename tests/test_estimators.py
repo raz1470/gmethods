@@ -220,6 +220,7 @@ class TestLTMLE:
             low, high = table.ci[name]
             assert low <= table.rd(name) <= high
         assert fitted.se_["never_any"] > 0
+        assert fitted.se_["natural_course"] == 0.0
 
     def test_ice_has_no_intervals(self, small_data):
         from gmethods.estimators import ICE

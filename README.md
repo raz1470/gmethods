@@ -39,7 +39,7 @@ print(est.compare(truth))
 | `gmethods.sim` | `Scenario` (every knob, six presets) and `ChatSimulator` (data and ground truth) |
 | `gmethods.interventions` | `natural()`, `never(*types)`, `never_any()`, `scale(*types, factor)`, `standard_set()`, `scale_set()` |
 | `gmethods.estimators` | `LTMLE` and `ICE`, `GFormula`, `IPW`, naive baselines, cluster `bootstrap`, diagnostics |
-| `gmethods.attribution` | Time-ordered split of complaints caused by handoffs across handoff types |
+| `gmethods.attribution` | Marginal and time-ordered splits of complaints across handoff types |
 | `gmethods.results` | `RiskTable`: risk, RD, RR and complaints avoided per 1,000 chats |
 
 The same intervention objects drive the truth and every estimator, so a
@@ -98,7 +98,7 @@ and `--summarise`.
 
 - [The simulator](docs/simulator.md): time grid, variables, structural equations, presets.
 - [Estimators](docs/estimators.md): LTMLE, g-formula, IPW, naive baselines, bootstrap, diagnostics, using your own panel.
-- [Attribution](docs/attribution.md): splitting complaints caused by handoffs across handoff types.
+- [Attribution](docs/attribution.md): how many complaints handoffs cause, and the marginal split across handoff types.
 
 ## Development
 
