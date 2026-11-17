@@ -198,3 +198,77 @@ def _chats_from(panel: pd.DataFrame) -> pd.DataFrame:
         out[f"n_{lv}"] = g["handoff"].apply(lambda s, lv=lv: (s == lv).sum())
         out[f"n_{lv}_before_complaint"] = out[f"n_{lv}"]
     return out.reset_index()
+
+
+@pytest.fixture(scope="module")
+def fitted(small_data):
+    from gmethods.estimators import LTMLE
+
+    model = LTMLE(learner="linear", treatment_learner="hgb", learner_params=FAST)
+    return model.fit(small_data.panel)
+
+
+class TestLTMLE:
+    def test_natural_course_equals_observed(self, fitted, small_data):
+        table = fitted.estimate([iv.natural()])
+        observed = small_data.chats["complained"].mean()
+        assert table.risks["natural_course"] == pytest.approx(observed, abs=2e-3)
+
+    def test_intervals_cover_estimate(self, fitted):
+        table = fitted.estimate(REGIMES)
+        for name in ("never_escalation", "never_any"):
+            low, high = table.ci[name]
+            assert low <= table.rd(name) <= high
+        assert fitted.se_["never_any"] > 0
+
+    def test_ice_has_no_intervals(self, small_data):
+        from gmethods.estimators import ICE
+
+        table = ICE(learner="linear").fit(small_data.panel).estimate(REGIMES)
+        assert table.label == "ice" and not table.ci
+        assert table.rd("never_any") < 0
+
+    def test_null_scenario_near_zero(self):
+        from gmethods.estimators import LTMLE
+
+        sim = ChatSimulator(Scenario.preset("null", n_chats=4_000, seed=3))
+        data = sim.simulate()
+        table = (
+            LTMLE(learner="linear", treatment_learner="hgb", learner_params=FAST)
+            .fit(data.panel)
+            .estimate(REGIMES)
+        )
+        for name in ("never_escalation", "never_any"):
+            low, high = table.ci[name]
+            assert low < 0.002 and high > -0.002
+
+    def test_fluctuation_guard(self):
+        from gmethods.estimators.ltmle import _fluctuate
+
+        z = np.zeros(50)
+        assert _fluctuate(z, np.full(50, 0.01), np.ones(50)) == 0.0
+        z = np.r_[np.ones(20), np.zeros(80)]
+        eps = _fluctuate(z, np.full(100, 0.1), np.ones(100))
+        assert eps > 0
+
+
+class TestStack:
+    def test_stacked_classifier(self, small_data):
+        from gmethods.estimators._features import make_learner
+
+        rng = np.random.default_rng(0)
+        X = rng.normal(size=(600, 3))
+        y = (X[:, 0] + rng.normal(size=600) > 0).astype(int)
+        est = make_learner("stack", "classify", [False] * 3, params=FAST).fit(X, y)
+        p = est.predict_proba(X)
+        assert p.shape == (600, 2) and np.allclose(p.sum(axis=1), 1)
+
+    def test_stacked_regressor_weights_non_negative(self):
+        from gmethods.estimators._features import make_learner
+
+        rng = np.random.default_rng(1)
+        X = rng.normal(size=(500, 2))
+        y = np.sin(X[:, 0]) + 0.1 * rng.normal(size=500)
+        est = make_learner("stack", "regress", [False] * 2, params=FAST).fit(X, y)
+        assert (est.weights_ >= 0).all()
+        assert np.corrcoef(est.predict(X), y)[0, 1] > 0.8

@@ -74,6 +74,14 @@ class TestConstructors:
         assert names[0] == "natural_course" and names[-1] == "never_any"
         assert len(names) == 6
 
+    def test_scale_set(self):
+        regimes = iv.scale_set(factor=0.5)
+        names = [x.name for x in regimes]
+        assert names[0] == "natural_course" and names[-1] == "scale_any_0.5"
+        p = np.full((1, 5), 0.2)
+        out = regimes[-1].transform_probs(p, HANDOFF_TYPES)
+        np.testing.assert_allclose(out[0], [0.6, 0.1, 0.1, 0.1, 0.1])
+
     def test_rejects_unknown_level(self):
         with pytest.raises(ValueError):
             iv.never("teleport").apply(np.array([0]), np.array([0.5]), HANDOFF_TYPES)

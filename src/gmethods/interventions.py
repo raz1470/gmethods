@@ -177,3 +177,16 @@ def scale(*levels: str, factor: float = 0.5, name: str | None = None) -> Scale:
 def standard_set(names: Sequence[str] = HANDOFF_TYPES) -> list[Intervention]:
     """Natural course, never each level in turn, and never any."""
     return [natural(), *(never(k) for k in names[1:]), never_any(names)]
+
+
+def scale_set(
+    names: Sequence[str] = HANDOFF_TYPES, factor: float = 0.5
+) -> list[Intervention]:
+    """Natural course, scale each level in turn, and scale all of them.
+
+    These regimes need far weaker positivity than removing a level: only
+    the natural course has to be supported, not a world where the level
+    never happens.
+    """
+    every = Scale(name=f"scale_any_{factor:g}", levels=tuple(names[1:]), factor=factor)
+    return [natural(), *(scale(k, factor=factor) for k in names[1:]), every]

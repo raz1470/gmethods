@@ -5,11 +5,14 @@ from .bootstrap import bootstrap, resample_clusters
 from .diagnostics import natural_course_check, positivity_table, weight_summary
 from .gformula import GFormula
 from .ipw import IPW
+from .ltmle import ICE, LTMLE
 from .naive import CountRegression, PooledHazard
 
 __all__ = [
     "HANDOFF_COVARIATES",
+    "ICE",
     "IPW",
+    "LTMLE",
     "CountRegression",
     "CovariateSpec",
     "GFormula",

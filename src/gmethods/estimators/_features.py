@@ -13,14 +13,14 @@ from sklearn.ensemble import (
     HistGradientBoostingClassifier,
     HistGradientBoostingRegressor,
 )
-from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.linear_model import LinearRegression, LogisticRegression, Ridge
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from ..interventions import HANDOFF_TYPES
 from ..sim.simulator import PANEL_BASELINE
 
-Learner = Literal["hgb", "linear"]
+Learner = Literal["hgb", "linear", "stack"]
 
 
 @dataclass(frozen=True)
@@ -215,12 +215,46 @@ def make_learner(
             else LinearRegression()
         )
         return Pipeline([("prep", prep), ("model", model)])
+    if learner == "stack":
+        from ._stack import StackedClassifier, StackedRegressor
+
+        members = [
+            make_spline_learner(task, cat_mask),
+            make_learner("hgb", task, cat_mask, seed, params),
+        ]
+        if task == "classify":
+            return StackedClassifier(members, random_state=seed)
+        return StackedRegressor(members, random_state=seed)
     raise ValueError(f"unknown learner {learner!r}")
 
 
-def fit_learner(est, X, y):
+def make_spline_learner(task: str, cat_mask: list[bool], n_knots: int = 5):
+    """Additive spline model: B-splines on numeric columns, one-hot categories.
+
+    Columns with few distinct values (indicators, small counts) pass through
+    scaled, since a spline basis on them adds nothing. A ridge penalty keeps
+    the basis stable. This is the smooth member of the default stack.
+    """
+    from ._stack import SplineFeatures
+
+    model = (
+        LogisticRegression(C=1.0, max_iter=3000)
+        if task == "classify"
+        else Ridge(alpha=1.0)
+    )
+    return Pipeline(
+        [("prep", SplineFeatures(cat_mask=cat_mask, n_knots=n_knots)), ("model", model)]
+    )
+
+
+def fit_learner(est, X, y, sample_weight=None):
     est = clone(est)
-    est.fit(X, y)
+    if sample_weight is None:
+        est.fit(X, y)
+    elif isinstance(est, Pipeline):
+        est.fit(X, y, **{f"{est.steps[-1][0]}__sample_weight": sample_weight})
+    else:
+        est.fit(X, y, sample_weight=sample_weight)
     return est
 
 
