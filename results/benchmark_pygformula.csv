@@ -1,0 +1,6 @@
+regime,truth,gmethods_linear,pygformula
+never_any,-5.69,-7.55,-7.06
+never_escalation,-4.09,-5.27,-4.30
+never_requeue,-3.09,-2.72,-1.89
+never_shift_change,-1.32,-1.69,-1.73
+never_transfer,-0.45,-1.23,-1.42
