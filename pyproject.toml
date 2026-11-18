@@ -64,6 +64,9 @@ extend-ignore-names = ["X", "T", "F", "_X"]
 "notebooks/*.ipynb" = ["E501", "E402", "I001", "F401", "N806"]
 # Research scripts kept as they were run.
 "tools/**/*.py" = ["N803", "N806", "E501"]
+# Article builder: typographic minus signs and dashes are intended.
+"tools/build_article.py" = ["RUF001", "RUF005"]
+"tools/svg.py" = ["RUF005"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

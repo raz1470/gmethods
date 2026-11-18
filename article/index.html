@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Fix Biased Attribution in SHAP With G-Methods</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --treated: #eb6834;
+  --control: #2a78d6;
+  --aqua:    #1baf7a;
+  --text:    #111827;
+  --muted:   #6b7280;
+  --light:   #d1d5db;
+  --border:  #e5e7eb;
+  --bg:      #f9fafb;
+  --w:       700px;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  color: var(--text);
+  background: #fff;
+  line-height: 1.7;
+  font-size: 17px;
+}
+
+.hdr {
+  background: var(--text);
+  color: #fff;
+  padding: 3.5rem 1.5rem 3rem;
+  text-align: center;
+}
+h1 {
+  font-size: clamp(1.8rem, 5.5vw, 2.5rem);
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -.025em;
+  margin-bottom: .8rem;
+}
+.tagline { color: #cbd5e1; font-size: 1.1rem; max-width: 580px; margin: 0 auto; }
+.byline { color: #94a3b8; font-size: .85rem; margin-top: 1rem; }
+.hdr p { margin-left: auto; margin-right: auto; }
+
+.snav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: #fff;
+  max-width: var(--w);
+  margin: 0 auto;
+  padding: 0 1.5rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  overflow-x: auto;
+}
+.snav a {
+  flex-shrink: 0;
+  padding: .75rem 0;
+  margin-right: 1.6rem;
+  text-decoration: none;
+  font-size: .82rem;
+  font-weight: 500;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+.snav a:hover { color: var(--text); border-bottom-color: var(--light); }
+.snav a.active { color: var(--text); border-bottom-color: var(--text); }
+
+main { max-width: var(--w); margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+
+p { margin-bottom: 1.1rem; max-width: 64ch; font-size: 1.03rem; }
+a { color: var(--control); }
+
+ul.pts { margin: 0 0 1.4rem; padding: 0; list-style: none; max-width: 64ch; }
+ul.pts li {
+  position: relative;
+  padding: .25rem 0 .25rem 1.15rem;
+  margin-bottom: .3rem;
+  font-size: 1.03rem;
+  line-height: 1.65;
+}
+ul.pts li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: .95rem;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+section { margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--border); }
+.s-label { font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: .4rem; }
+h2 { font-size: 1.4rem; font-weight: 700; letter-spacing: -.02em; line-height: 1.25; margin-bottom: 1rem; }
+h3 { font-size: 1.1rem; font-weight: 700; line-height: 1.3; margin: 2.25rem 0 .5rem; }
+
+.eqn {
+  margin: 1.25rem 0;
+  padding: .9rem 1rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-align: center;
+  font-family: 'Iowan Old Style', Georgia, serif;
+  font-size: 1.1rem;
+}
+.eqn sub { font-size: .7em; }
+
+.fig { margin: 1.75rem 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.fig-hdr { padding: .75rem 1.1rem; background: var(--bg); border-bottom: 1px solid var(--border); }
+.fig-title { font-size: .95rem; font-weight: 700; }
+.fig-sub { font-size: .8rem; color: var(--muted); margin-top: .15rem; }
+.fig-body { padding: 1rem 1.1rem .4rem; }
+.fig-cap { padding: .6rem 1.1rem .95rem; font-size: .825rem; color: var(--muted); line-height: 1.55; max-width: none; margin: 0; }
+svg.chart { display: block; width: 100%; height: auto; }
+
+.panels { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem 1rem; }
+.panels.three { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 599px) { .panels, .panels.three { grid-template-columns: 1fr; } }
+.panel-title { font-size: .8rem; font-weight: 700; margin-bottom: .1rem; }
+.panel-sub { font-size: .74rem; color: var(--muted); }
+
+.legend { display: flex; flex-wrap: wrap; gap: .5rem 1rem; padding: 0 0 .5rem; font-size: .78rem; }
+.li { display: flex; align-items: center; gap: .35rem; }
+
+.tabs { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .7rem; }
+.tabs button {
+  font: inherit;
+  font-size: .78rem;
+  padding: .3rem .7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tabs button.on { background: var(--text); color: #fff; border-color: var(--text); }
+
+.callout {
+  border-left: 3px solid var(--text);
+  padding: 1rem 1.4rem;
+  margin: 1.75rem 0;
+  background: var(--bg);
+  border-radius: 0 6px 6px 0;
+}
+.callout p { margin: 0; font-size: 1.05rem; font-weight: 600; color: #1f2937; max-width: none; }
+
+.knums { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; margin: 1.75rem 0 .5rem; }
+@media (max-width: 520px) { .knums { grid-template-columns: 1fr; } }
+.kbox { border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.1rem; background: var(--bg); text-align: center; }
+.kbox .lbl { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: .3rem; }
+.kbox .num { font-size: 1.75rem; font-weight: 800; line-height: 1; margin-bottom: .3rem; }
+.kbox .lab { font-size: .74rem; color: var(--muted); line-height: 1.4; }
+
+.dtable-wrap { overflow-x: auto; margin: 1.5rem 0; }
+ol.pts { margin: 0 0 1.4rem 1.4rem; padding: 0; max-width: 64ch; }
+ol.pts li { margin-bottom: .45rem; padding-left: .25rem; }
+.rulebox { overflow-x: auto; margin: 1.5rem 0; border: 2px solid var(--text); border-radius: 8px; padding: .75rem 1rem; }
+table.rule { font-size: .95rem; }
+table.rule td:nth-child(2) { font-size: 1.15rem; text-align: center; }
+table.dtable { border-collapse: collapse; width: 100%; font-size: .86rem; }
+.dtable caption { text-align: left; font-size: .8rem; color: var(--muted); padding-bottom: .4rem; }
+.dtable th, .dtable td { padding: .45rem .6rem; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.dtable th { font-weight: 700; background: var(--bg); }
+.dtable td.num, .dtable th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.dtable td.bad { color: #b42318; font-weight: 600; }
+.dtable td.good { color: #067647; font-weight: 600; }
+
+details.faq { border-bottom: 1px solid var(--border); padding: .8rem 0; }
+details.faq summary { font-weight: 600; cursor: pointer; list-style: none; position: relative; padding-right: 1.5rem; }
+details.faq summary::-webkit-details-marker { display: none; }
+details.faq summary::after { content: "+"; position: absolute; right: 0; color: var(--muted); }
+details.faq[open] summary::after { content: "–"; }
+details.faq p { margin: .7rem 0 0; }
+
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; background: var(--bg); padding: .05rem .3rem; border-radius: 4px; }
+pre { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: .9rem 1rem; overflow-x: auto; font-size: .82rem; line-height: 1.55; margin: 1rem 0 1.4rem; }
+pre code { background: none; padding: 0; }
+
+.refs { font-size: .85rem; color: var(--muted); }
+.refs li { margin-bottom: .4rem; }
+footer { max-width: var(--w); margin: 0 auto; padding: 1.5rem; border-top: 1px solid var(--border); font-size: .8rem; color: var(--muted); }
+ul.pts ul { list-style: none; margin: .45rem 0 0; padding: 0; }
+ul.pts ul li { margin-bottom: .35rem; }
+
+.flow { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; margin: 1.5rem 0; }
+@media (max-width: 599px) { .flow { grid-template-columns: 1fr; } }
+.step { border: 1px solid var(--border); border-radius: 8px; padding: .9rem 1rem; background: var(--bg); }
+.step .n { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.step .t { font-weight: 700; margin: .15rem 0 .35rem; }
+.step p { font-size: .86rem; margin: 0; line-height: 1.5; }
+.stack > div { margin-bottom: .9rem; }
+.draft { border: 1px dashed var(--light); border-radius: 8px; padding: 1rem 1.2rem; color: var(--muted); font-size: .9rem; }
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <h1>How to Fix Biased Attribution in SHAP With G-Methods</h1>
+  <p class="tagline">Simulations with a known answer test SHAP driver analysis against LTMLE on churn, campaign and support data where treatments repeat over time.</p>
+  <p class="byline">Ryan O'Sullivan · Code on <a href="https://github.com/raz1470/gmethods" style="color:#cbd5e1">GitHub</a></p>
+</header>
+
+<nav class="snav">
+  <a href="#measure" class="active">1 · SHAP vs attribution</a>
+  <a href="#state">2 · Treatment follows state</a>
+  <a href="#exposure">3 · Exposure and logging</a>
+  <a href="#chain">4 · Treatments cause treatments</a>
+  <a href="#recovery">5 · Does it work?</a>
+  <a href="#rules">6 · Rule-forced treatments</a>
+  <a href="#faq">Questions</a>
+  <a href="#together">Conclusion</a>
+</nav>
+
+<main>
+
+<p>Many of the things a business does to a customer happen more than once: payment failures and app errors, marketing emails and push notifications, transfers and escalations in a support chat. A common question is which of them drive an outcome such as churn, product take-up or complaints, and by how much. A common answer is to fit a gradient-boosted model of the outcome on counts of each treatment, plus customer features, and read the drivers off SHAP values (<a href="https://arxiv.org/abs/1705.07874" target="_blank" rel="noopener">Lundberg and Lee 2017</a>). When treatments repeat over time and react to the customer's state, that answer has three problems:</p>
+
+<ul class="pts">
+  <li><strong>The treatment follows the state.</strong> Customers get a treatment because of how they behave (heavy users meet more friction, disengaged customers get more offers), and the treatment then changes that behaviour. A model of one row per customer can't separate the two.</li>
+  <li><strong>Counts depend on how long a customer was there.</strong> Customers who churn or take up early have fewer weeks in which to be treated, and raw logs record some treatments after the outcome. Both can make a harmful treatment look protective.</li>
+  <li><strong>Earlier treatments cause later ones.</strong> A transfer leads to a long wait, and the wait leads to an escalation. SHAP gives the escalation credit for some of the transfer's effect.</li>
+</ul>
+
+<p>This article runs one simulation per problem, each with a known answer, and compares SHAP with LTMLE, a g-method built for treatments that repeat over time. It then checks LTMLE against two existing packages, and shows where it struggles: treatments that a business rule forces.</p>
+
+<!-- 1 -->
+<section id="measure">
+  <h2>1. What SHAP measures and what attribution needs</h2>
+
+  <p>Let's start with what SHAP returns. A SHAP value splits one prediction of the model across its features, so that the pieces add up to the prediction. Averaged over customers, the absolute SHAP value of each treatment count is the usual measure of a driver's importance. It is faithful to the model, and the model is faithful to the data: it says which counts predict churn. It doesn't say what would happen to churn if a count changed.</p>
+
+  <p>The question a team needs answered is about a change it could make: if payment failures were 10% rarer, how many fewer customers would churn? This is the effect of a policy, a rule for how often a treatment happens. Running the same 10% cut for each treatment type and dividing each effect by their total gives each type's share:</p>
+
+  <div class="eqn">share<sub>k</sub> = effect of 10% fewer k / Σ<sub>j</sub> effect of 10% fewer j</div>
+
+  <p>The shares split the part of churn the treatments cause, not all of churn: customers also leave for reasons that have nothing to do with friction. Section 4 explains why we split this way rather than with Shapley values.</p>
+
+  <p>To check SHAP against these shares we need data where they are known. Each simulator below generates customers week by week (or chats turn by turn) from a set of equations, so the true effect of a policy can be computed by rerunning the same customers, with the same random draws, under the policy. The SHAP model is the one most teams would build: gradient-boosted trees on one row per customer, with treatment counts from the raw event log, customer features and the average of the observed engagement signal.</p>
+
+  <div class="fig">
+    <div class="fig-hdr">
+      <div class="fig-title">SHAP's share of the credit against the true share of the effect</div>
+      <div class="fig-sub">Three simulated problems, 10 datasets of 50,000 customers or chats each</div>
+    </div>
+    <div class="fig-body"><div class="legend"><span class="li"><svg width="12" height="12"><rect width="12" height="12" rx="2" fill="#2a78d6"/></svg>True share of the effect</span><span class="li"><svg width="12" height="12"><rect width="12" height="12" rx="2" fill="#eb6834"/></svg>SHAP share (whisker: 10th to 90th percentile)</span></div><div class="stack"><div><div class="panel-title">Friction and churn</div><svg class="chart" viewBox="0 0 680 236"><line x1="110.0" x2="110.0" y1="8" y2="184" stroke="#e5e7eb"/><text x="110.0" y="199" text-anchor="middle" font-size="11" fill="#6b7280">0</text><line x1="194.0" x2="194.0" y1="8" y2="184" stroke="#e5e7eb"/><text x="194.0" y="199" text-anchor="middle" font-size="11" fill="#6b7280">20</text><line x1="278.0" x2="278.0" y1="8" y2="184" stroke="#e5e7eb"/><text x="278.0" y="199" text-anchor="middle" font-size="11" fill="#6b7280">40</text><line x1="362.0" x2="362.0" y1="8" y2="184" stroke="#e5e7eb"/><text x="362.0" y="199" text-anchor="middle" font-size="11" fill="#6b7280">60</text><line x1="446.0" x2="446.0" y1="8" y2="184" stroke="#e5e7eb"/><text x="446.0" y="199" text-anchor="middle" font-size="11" fill="#6b7280">80</text><line x1="530.0" x2="530.0" y1="8" y2="184" stroke="#e5e7eb"/><text x="530.0" y="199" text-anchor="middle" font-size="11" fill="#6b7280">100</text><text x="104" y="30" text-anchor="end" font-size="11" fill="#111827">app error</text><rect x="110" y="14" width="138.8" height="12" rx="2" fill="#2a78d6"><title>True share: 33%</title></rect><rect x="110" y="28" width="106.6" height="12" rx="2" fill="#eb6834"><title>SHAP share: 25% (22% to 29%)</title></rect><line x1="200.8" x2="230.4" y1="34.0" y2="34.0" stroke="#111827" stroke-width="1.2"/><line x1="200.8" x2="200.8" y1="31.0" y2="37.0" stroke="#111827" stroke-width="1.2"/><line x1="230.4" x2="230.4" y1="31.0" y2="37.0" stroke="#111827" stroke-width="1.2"/><text x="235.4" y="38.0" font-size="10" fill="#6b7280">says it lowers churn</text><text x="104" y="74" text-anchor="end" font-size="11" fill="#111827">payment failure</text><rect x="110" y="58" width="115.5" height="12" rx="2" fill="#2a78d6"><title>True share: 27%</title></rect><rect x="110" y="72" width="22.6" height="12" rx="2" fill="#eb6834"><title>SHAP share: 5% (4% to 6%)</title></rect><line x1="127.7" x2="136.1" y1="78.0" y2="78.0" stroke="#111827" stroke-width="1.2"/><line x1="127.7" x2="127.7" y1="75.0" y2="81.0" stroke="#111827" stroke-width="1.2"/><line x1="136.1" x2="136.1" y1="75.0" y2="81.0" stroke="#111827" stroke-width="1.2"/><text x="141.1" y="82.0" font-size="10" fill="#6b7280">says it lowers churn</text><text x="104" y="118" text-anchor="end" font-size="11" fill="#111827">re-verification</text><rect x="110" y="102" width="97.4" height="12" rx="2" fill="#2a78d6"><title>True share: 23%</title></rect><rect x="110" y="116" width="129.8" height="12" rx="2" fill="#eb6834"><title>SHAP share: 31% (28% to 34%)</title></rect><line x1="226.1" x2="253.2" y1="122.0" y2="122.0" stroke="#111827" stroke-width="1.2"/><line x1="226.1" x2="226.1" y1="119.0" y2="125.0" stroke="#111827" stroke-width="1.2"/><line x1="253.2" x2="253.2" y1="119.0" y2="125.0" stroke="#111827" stroke-width="1.2"/><text x="258.2" y="126.0" font-size="10" fill="#6b7280">says it lowers churn</text><text x="104" y="162" text-anchor="end" font-size="11" fill="#111827">card decline</text><rect x="110" y="146" width="68.3" height="12" rx="2" fill="#2a78d6"><title>True share: 16%</title></rect><rect x="110" y="160" width="161.0" height="12" rx="2" fill="#eb6834"><title>SHAP share: 38% (37% to 40%)</title></rect><line x1="265.4" x2="278.3" y1="166.0" y2="166.0" stroke="#111827" stroke-width="1.2"/><line x1="265.4" x2="265.4" y1="163.0" y2="169.0" stroke="#111827" stroke-width="1.2"/><line x1="278.3" x2="278.3" y1="163.0" y2="169.0" stroke="#111827" stroke-width="1.2"/><line x1="110" x2="110" y1="8" y2="184" stroke="#6b7280"/><text x="320.0" y="232" text-anchor="middle" font-size="11" fill="#6b7280">% of the treatment effect</text></svg></div><div><div class="panel-title">Campaigns and take-up</div><svg class="chart" viewBox="0 0 680 192"><line x1="110.0" x2="110.0" y1="8" y2="140" stroke="#e5e7eb"/><text x="110.0" y="155" text-anchor="middle" font-size="11" fill="#6b7280">0</text><line x1="194.0" x2="194.0" y1="8" y2="140" stroke="#e5e7eb"/><text x="194.0" y="155" text-anchor="middle" font-size="11" fill="#6b7280">20</text><line x1="278.0" x2="278.0" y1="8" y2="140" stroke="#e5e7eb"/><text x="278.0" y="155" text-anchor="middle" font-size="11" fill="#6b7280">40</text><line x1="362.0" x2="362.0" y1="8" y2="140" stroke="#e5e7eb"/><text x="362.0" y="155" text-anchor="middle" font-size="11" fill="#6b7280">60</text><line x1="446.0" x2="446.0" y1="8" y2="140" stroke="#e5e7eb"/><text x="446.0" y="155" text-anchor="middle" font-size="11" fill="#6b7280">80</text><line x1="530.0" x2="530.0" y1="8" y2="140" stroke="#e5e7eb"/><text x="530.0" y="155" text-anchor="middle" font-size="11" fill="#6b7280">100</text><text x="104" y="30" text-anchor="end" font-size="11" fill="#111827">offer email</text><rect x="110" y="14" width="214.0" height="12" rx="2" fill="#2a78d6"><title>True share: 51%</title></rect><rect x="110" y="28" width="153.0" height="12" rx="2" fill="#eb6834"><title>SHAP share: 36% (35% to 38%)</title></rect><line x1="254.9" x2="268.4" y1="34.0" y2="34.0" stroke="#111827" stroke-width="1.2"/><line x1="254.9" x2="254.9" y1="31.0" y2="37.0" stroke="#111827" stroke-width="1.2"/><line x1="268.4" x2="268.4" y1="31.0" y2="37.0" stroke="#111827" stroke-width="1.2"/><text x="273.4" y="38.0" font-size="10" fill="#6b7280">says it lowers take-up</text><text x="104" y="74" text-anchor="end" font-size="11" fill="#111827">info email</text><rect x="110" y="58" width="154.5" height="12" rx="2" fill="#2a78d6"><title>True share: 37%</title></rect><rect x="110" y="72" width="79.0" height="12" rx="2" fill="#eb6834"><title>SHAP share: 19% (17% to 21%)</title></rect><line x1="182.8" x2="198.8" y1="78.0" y2="78.0" stroke="#111827" stroke-width="1.2"/><line x1="182.8" x2="182.8" y1="75.0" y2="81.0" stroke="#111827" stroke-width="1.2"/><line x1="198.8" x2="198.8" y1="75.0" y2="81.0" stroke="#111827" stroke-width="1.2"/><text x="104" y="118" text-anchor="end" font-size="11" fill="#111827">push</text><rect x="110" y="102" width="51.6" height="12" rx="2" fill="#2a78d6"><title>True share: 12%</title></rect><rect x="110" y="116" width="187.9" height="12" rx="2" fill="#eb6834"><title>SHAP share: 45% (44% to 47%)</title></rect><line x1="292.9" x2="305.5" y1="122.0" y2="122.0" stroke="#111827" stroke-width="1.2"/><line x1="292.9" x2="292.9" y1="119.0" y2="125.0" stroke="#111827" stroke-width="1.2"/><line x1="305.5" x2="305.5" y1="119.0" y2="125.0" stroke="#111827" stroke-width="1.2"/><text x="310.5" y="126.0" font-size="10" fill="#6b7280">says it lowers take-up</text><line x1="110" x2="110" y1="8" y2="140" stroke="#6b7280"/><text x="320.0" y="188" text-anchor="middle" font-size="11" fill="#6b7280">% of the treatment effect</text></svg></div><div><div class="panel-title">Chat handoffs and complaints</div><svg class="chart" viewBox="0 0 680 236"><line x1="110.0" x2="110.0" y1="8" y2="184" stroke="#e5e7eb"/><text x="110.0" y="199" text-anchor="middle" font-size="11" fill="#6b7280">0</text><line x1="194.0" x2="194.0" y1="8" y2="184" stroke="#e5e7eb"/><text x="194.0" y="199" text-anchor="middle" font-size="11" fill="#6b7280">20</text><line x1="278.0" x2="278.0" y1="8" y2="184" stroke="#e5e7eb"/><text x="278.0" y="199" text-anchor="middle" font-size="11" fill="#6b7280">40</text><line x1="362.0" x2="362.0" y1="8" y2="184" stroke="#e5e7eb"/><text x="362.0" y="199" text-anchor="middle" font-size="11" fill="#6b7280">60</text><line x1="446.0" x2="446.0" y1="8" y2="184" stroke="#e5e7eb"/><text x="446.0" y="199" text-anchor="middle" font-size="11" fill="#6b7280">80</text><line x1="530.0" x2="530.0" y1="8" y2="184" stroke="#e5e7eb"/><text x="530.0" y="199" text-anchor="middle" font-size="11" fill="#6b7280">100</text><text x="104" y="30" text-anchor="end" font-size="11" fill="#111827">requeue</text><rect x="110" y="14" width="191.6" height="12" rx="2" fill="#2a78d6"><title>True share: 46%</title></rect><rect x="110" y="28" width="28.0" height="12" rx="2" fill="#eb6834"><title>SHAP share: 7% (5% to 9%)</title></rect><line x1="129.4" x2="149.2" y1="34.0" y2="34.0" stroke="#111827" stroke-width="1.2"/><line x1="129.4" x2="129.4" y1="31.0" y2="37.0" stroke="#111827" stroke-width="1.2"/><line x1="149.2" x2="149.2" y1="31.0" y2="37.0" stroke="#111827" stroke-width="1.2"/><text x="104" y="74" text-anchor="end" font-size="11" fill="#111827">escalation</text><rect x="110" y="58" width="190.4" height="12" rx="2" fill="#2a78d6"><title>True share: 45%</title></rect><rect x="110" y="72" width="305.9" height="12" rx="2" fill="#eb6834"><title>SHAP share: 73% (65% to 79%)</title></rect><line x1="382.5" x2="440.0" y1="78.0" y2="78.0" stroke="#111827" stroke-width="1.2"/><line x1="382.5" x2="382.5" y1="75.0" y2="81.0" stroke="#111827" stroke-width="1.2"/><line x1="440.0" x2="440.0" y1="75.0" y2="81.0" stroke="#111827" stroke-width="1.2"/><text x="104" y="118" text-anchor="end" font-size="11" fill="#111827">shift change</text><rect x="110" y="102" width="21.5" height="12" rx="2" fill="#2a78d6"><title>True share: 5%</title></rect><rect x="110" y="116" width="5.9" height="12" rx="2" fill="#eb6834"><title>SHAP share: 1% (1% to 2%)</title></rect><line x1="112.1" x2="120.3" y1="122.0" y2="122.0" stroke="#111827" stroke-width="1.2"/><line x1="112.1" x2="112.1" y1="119.0" y2="125.0" stroke="#111827" stroke-width="1.2"/><line x1="120.3" x2="120.3" y1="119.0" y2="125.0" stroke="#111827" stroke-width="1.2"/><text x="104" y="162" text-anchor="end" font-size="11" fill="#111827">transfer</text><rect x="110" y="146" width="16.5" height="12" rx="2" fill="#2a78d6"><title>True share: 4%</title></rect><rect x="110" y="160" width="80.2" height="12" rx="2" fill="#eb6834"><title>SHAP share: 19% (12% to 25%)</title></rect><line x1="161.1" x2="213.4" y1="166.0" y2="166.0" stroke="#111827" stroke-width="1.2"/><line x1="161.1" x2="161.1" y1="163.0" y2="169.0" stroke="#111827" stroke-width="1.2"/><line x1="213.4" x2="213.4" y1="163.0" y2="169.0" stroke="#111827" stroke-width="1.2"/><line x1="110" x2="110" y1="8" y2="184" stroke="#6b7280"/><text x="320.0" y="232" text-anchor="middle" font-size="11" fill="#6b7280">% of the treatment effect</text></svg></div></div></div>
+    <p class="fig-cap">Blue: each treatment type's true share of the effect of making every type 10% rarer. Orange: its share of the mean absolute SHAP value, averaged over 10 datasets, with a whisker from the 10th to the 90th percentile across datasets. "Says it lowers" marks types whose average SHAP value, among customers who had that treatment, is negative. Every type raises the outcome in the simulation.</p>
+  </div>
+
+  <p>SHAP's ranking is wrong in all three problems, and the same way in every dataset. It ranks card declines first for churn (38% of the credit against a true 16%) and push notifications first for take-up (45% against 12%). It gives requeues 7% of the credit for complaints when they cause 46% of the effect. For churn and take-up it also gets the direction wrong: it says three of the four frictions lower churn, and that offer emails and pushes lower take-up. All five raise them. The narrow whiskers matter: more data would not fix this. Sections 2 to 4 show why it happens, one problem at a time.</p>
+
+  <p>The g-methods (<a href="https://doi.org/10.1016/0270-0255(86)90088-6" target="_blank" rel="noopener">Robins 1986</a>) answer the policy question directly. We use LTMLE (longitudinal targeted maximum likelihood estimation; <a href="https://doi.org/10.1515/1557-4679.1370" target="_blank" rel="noopener">van der Laan and Gruber 2012</a>), in the version for policies that change how often a treatment happens rather than switching it on or off (<a href="https://doi.org/10.1080/01621459.2021.1955691" target="_blank" rel="noopener">Díaz et al. 2021</a>). It works on a panel with one row per customer per week, up to the week of their outcome, and takes three steps:</p>
+
+  <div class="flow">
+    <div class="step"><div class="n">Step 1</div><div class="t">Model who gets which treatment</div><p>For each week, the probability of each treatment given the customer's history. The policy changes these probabilities (10% fewer payment failures), and the ratio of the policy's probability to the observed one gives each row a weight.</p></div>
+    <div class="step"><div class="n">Step 2</div><div class="t">Work backwards from the last week</div><p>Regress the outcome on the history, predict it with the treatment drawn from the policy, and pass that prediction back as the outcome for the week before. Correct each step with the weighted residuals from step 1.</p></div>
+    <div class="step"><div class="n">Step 3</div><div class="t">Average and compare</div><p>The average prediction at week 1 is the risk under the policy. Its difference from the risk with no policy is the effect, with a standard error from the same correction.</p></div>
+  </div>
+
+  <p>Step 2 is where the feedback is handled. Each week's model conditions on the customer's state that week, so the treatment is compared between customers in the same state. The prediction it passes back already includes how that week's treatment changed the next week's state. A single regression has to choose between adjusting for the state and keeping the effect that runs through it; working one week at a time gets both.</p>
+
+  <p>The correction in step 2 makes LTMLE doubly robust: if either the outcome models or the treatment models are right, the estimate is unbiased. Both are fitted with cross-fitting (each customer's predictions come from models trained on other customers), so flexible machine learning models can be used without biasing the effect.<sup>1</sup> The package also has the two older g-methods, the parametric g-formula and inverse probability weighting; section 5 compares all three.</p>
+
+  <p class="fig-cap" style="padding:0"><sup>1</sup> For a policy that multiplies the probability of treatment k by 0.9 and moves the rest to no treatment, the week-t weight is r<sub>t</sub> = p<sup>policy</sup>(A<sub>t</sub> | H<sub>t</sub>) / p(A<sub>t</sub> | H<sub>t</sub>), where H<sub>t</sub> is the history up to week t. The correction at week t weights each row by the product of these ratios from week 1 to week t, so a policy that changes many weeks gives some customers large weights (section 6). R's <a href="https://github.com/nt-williams/lmtp" target="_blank" rel="noopener">lmtp</a> implements the same estimator.</p>
+</section>
+
+
+<!-- 2 -->
+<section id="state">
+  <h2>2. The treatment follows the state</h2>
+
+  <p>Product friction is a good example of a treatment nobody chooses on purpose: a payment that fails, a card that's declined, an app error, a request to verify identity again. Who meets it isn't random. Customers who use the product more make more payments and open the app more often, so they hit more friction. They are also the customers least likely to leave. Friction then makes them use the product less, and using it less is what leads to churn.</p>
+
+  <p>The simulation:</p>
+  <ul class="pts">
+    <li>50,000 customers over 26 weeks. Each week a customer can meet one of four frictions: payment failure, card decline, app error or re-verification.</li>
+    <li>An unobserved engagement level drives transactions and app sessions, which drive the chance of friction.</li>
+    <li>Friction lowers next week's engagement. Churn rises as engagement falls, and also with that week's friction.</li>
+    <li>Re-verification fires on a schedule, which matters in section 6.</li>
+  </ul>
+
+  <div class="fig">
+    <div class="fig-hdr">
+      <div class="fig-title">The most engaged customers meet the most friction and churn the least</div>
+      <div class="fig-sub">One simulated dataset of 50,000 customers, 26 weeks each</div>
+    </div>
+    <div class="fig-body"><div class="panels"><div><div class="panel-title">Weeks with friction</div><div class="panel-sub">% of customer-weeks, by engagement quintile</div><svg class="chart" viewBox="0 0 340 210"><line x1="40" x2="330" y1="170.0" y2="170.0" stroke="#e5e7eb"/><text x="34" y="174.0" text-anchor="end" font-size="11" fill="#6b7280">0</text><line x1="40" x2="330" y1="124.0" y2="124.0" stroke="#e5e7eb"/><text x="34" y="128.0" text-anchor="end" font-size="11" fill="#6b7280">2</text><line x1="40" x2="330" y1="78.0" y2="78.0" stroke="#e5e7eb"/><text x="34" y="82.0" text-anchor="end" font-size="11" fill="#6b7280">4</text><line x1="40" x2="330" y1="32.0" y2="32.0" stroke="#e5e7eb"/><text x="34" y="36.0" text-anchor="end" font-size="11" fill="#6b7280">6</text><rect x="51.6" y="61.9" width="34.8" height="108.1" rx="3" fill="#eb6834"/><text x="69.0" y="57.9" text-anchor="middle" font-size="10" fill="#6b7280">4.7%</text><text x="69.0" y="185" text-anchor="middle" font-size="11" fill="#111827">Q1</text><rect x="109.6" y="56.6" width="34.8" height="113.4" rx="3" fill="#eb6834"/><text x="127.0" y="52.6" text-anchor="middle" font-size="10" fill="#6b7280">4.9%</text><text x="127.0" y="185" text-anchor="middle" font-size="11" fill="#111827">Q2</text><rect x="167.6" y="52.6" width="34.8" height="117.4" rx="3" fill="#eb6834"/><text x="185.0" y="48.6" text-anchor="middle" font-size="10" fill="#6b7280">5.1%</text><text x="185.0" y="185" text-anchor="middle" font-size="11" fill="#111827">Q3</text><rect x="225.6" y="46.5" width="34.8" height="123.5" rx="3" fill="#eb6834"/><text x="243.0" y="42.5" text-anchor="middle" font-size="10" fill="#6b7280">5.4%</text><text x="243.0" y="185" text-anchor="middle" font-size="11" fill="#111827">Q4</text><rect x="283.6" y="36.1" width="34.8" height="133.9" rx="3" fill="#eb6834"/><text x="301.0" y="32.1" text-anchor="middle" font-size="10" fill="#6b7280">5.8%</text><text x="301.0" y="185" text-anchor="middle" font-size="11" fill="#111827">Q5</text><line x1="40" x2="330" y1="170" y2="170" stroke="#6b7280"/><text x="185.0" y="204" text-anchor="middle" font-size="11" fill="#6b7280">Engagement quintile (Q5 = most engaged)</text></svg></div><div><div class="panel-title">Churn</div><div class="panel-sub">% of customer-weeks, by engagement quintile</div><svg class="chart" viewBox="0 0 340 210"><line x1="40" x2="330" y1="170.0" y2="170.0" stroke="#e5e7eb"/><text x="34" y="174.0" text-anchor="end" font-size="11" fill="#6b7280">0</text><line x1="40" x2="330" y1="134.4" y2="134.4" stroke="#e5e7eb"/><text x="34" y="138.4" text-anchor="end" font-size="11" fill="#6b7280">0.2</text><line x1="40" x2="330" y1="98.8" y2="98.8" stroke="#e5e7eb"/><text x="34" y="102.8" text-anchor="end" font-size="11" fill="#6b7280">0.4</text><line x1="40" x2="330" y1="63.3" y2="63.3" stroke="#e5e7eb"/><text x="34" y="67.3" text-anchor="end" font-size="11" fill="#6b7280">0.6</text><line x1="40" x2="330" y1="27.7" y2="27.7" stroke="#e5e7eb"/><text x="34" y="31.7" text-anchor="end" font-size="11" fill="#6b7280">0.8</text><rect x="51.6" y="36.1" width="34.8" height="133.9" rx="3" fill="#2a78d6"/><text x="69.0" y="32.1" text-anchor="middle" font-size="10" fill="#6b7280">0.75%</text><text x="69.0" y="185" text-anchor="middle" font-size="11" fill="#111827">Q1</text><rect x="109.6" y="93.5" width="34.8" height="76.5" rx="3" fill="#2a78d6"/><text x="127.0" y="89.5" text-anchor="middle" font-size="10" fill="#6b7280">0.43%</text><text x="127.0" y="185" text-anchor="middle" font-size="11" fill="#111827">Q2</text><rect x="167.6" y="120.6" width="34.8" height="49.4" rx="3" fill="#2a78d6"/><text x="185.0" y="116.6" text-anchor="middle" font-size="10" fill="#6b7280">0.28%</text><text x="185.0" y="185" text-anchor="middle" font-size="11" fill="#111827">Q3</text><rect x="225.6" y="140.0" width="34.8" height="30.0" rx="3" fill="#2a78d6"/><text x="243.0" y="136.0" text-anchor="middle" font-size="10" fill="#6b7280">0.17%</text><text x="243.0" y="185" text-anchor="middle" font-size="11" fill="#111827">Q4</text><rect x="283.6" y="153.2" width="34.8" height="16.8" rx="3" fill="#2a78d6"/><text x="301.0" y="149.2" text-anchor="middle" font-size="10" fill="#6b7280">0.09%</text><text x="301.0" y="185" text-anchor="middle" font-size="11" fill="#111827">Q5</text><line x1="40" x2="330" y1="170" y2="170" stroke="#6b7280"/><text x="185.0" y="204" text-anchor="middle" font-size="11" fill="#6b7280">Engagement quintile (Q5 = most engaged)</text></svg></div></div></div>
+    <p class="fig-cap">Customer-weeks grouped by the customer's engagement that week, from least (Q1) to most (Q5) engaged. Left: share of weeks with any friction. Right: share of weeks in which the customer churned.</p>
+  </div>
+
+  <p>The most engaged fifth of customers meets friction in 5.8% of weeks, against 4.7% for the least engaged, and churns in 0.09% of weeks against 0.75%. Across customers, more friction goes with less churn. A payment failure then lowers next week's engagement by 0.85 standard deviations, and a card decline by 0.54. So the state that hides the effect is also the path the effect travels along.</p>
+
+  <p>That creates a trap for the obvious fix, which is to control for engagement. The SHAP model already includes the customer's average app sessions over the whole period, weeks after the friction included, so part of what friction did is credited to that feature instead. A model fitted week by week (a pooled hazard: churn this week on this week's state and treatment) removes the confounding, because each treatment is compared within a state. But it holds engagement fixed, so it misses the part of the effect that runs through engagement. Averaged over 10 datasets, the pooled hazard recovers 45% to 58% of the true effect of each friction. LTMLE recovers 99% to 104%, because it lets engagement respond to the friction, as step 2 in section 1 described.</p>
+</section>
+
+<!-- 3 -->
+<section id="exposure">
+  <h2>3. Exposure time and the event log</h2>
+
+  <p>The table behind most driver analyses is built from an event log: one row per customer, with a count of each treatment. Two things that have nothing to do with the treatment's effect change those counts. The first is how long the customer was there to be treated. The second is whether the log keeps recording treatments after the outcome.</p>
+
+  <p>The simulation:</p>
+  <ul class="pts">
+    <li>50,000 customers over 26 weeks. Each week the CRM can send an information email, an offer email or a push notification.</li>
+    <li>Offers go to customers whose engagement score has dropped. The score is built from app sessions and email opens, which the campaigns themselves move.</li>
+    <li>The outcome is taking up a product (opening a savings pot), with churn as a competing event. Customers who take up stop receiving campaigns.</li>
+    <li>After a take-up, a confirmation email is logged as an information email.</li>
+  </ul>
+
+  <p>Customers who take up are observed for 13.5 weeks on average, against 25.3 for those who don't. Before taking up they receive campaigns at almost the same rate (0.16 a week against 0.15), but over the whole period they receive fewer (2.8 against 3.7). A high count marks a customer who hasn't taken up yet, so every campaign looks as if it prevents take-up. On top of that, 5% of information emails are confirmations sent after the take-up. The same thing happens with friction: 85% of the card declines logged for churners come in or after the week they churn, as they move their money out. That is why SHAP ranks card declines first in figure 1.</p>
+
+  <div class='dtable-wrap'><table class='dtable'><caption>Change in take-ups per 1,000 customers if each campaign stopped. One simulated dataset of 50,000 customers. Red: wrong sign. Green: within 20% of the truth.</caption><thead><tr><th>Method</th><th class='num'>info email</th><th class='num'>offer email</th><th class='num'>push</th></tr></thead><tbody><tr><td>Truth</td><td class='num '>−5.7</td><td class='num '>−8.3</td><td class='num '>−1.9</td></tr><tr><td>Count regression, every send in the log</td><td class='num bad'>+6.9</td><td class='num bad'>+47.8</td><td class='num bad'>+76.5</td></tr><tr><td>Count regression, sends before take-up</td><td class='num bad'>+88.6</td><td class='num bad'>+47.6</td><td class='num bad'>+73.8</td></tr><tr><td>… plus the engagement score</td><td class='num bad'>+154.4</td><td class='num bad'>+68.6</td><td class='num bad'>+110.1</td></tr><tr><td>Pooled hazard (week by week)</td><td class='num '>−4.5</td><td class='num '>−5.4</td><td class='num good'>−2.2</td></tr><tr><td>LTMLE</td><td class='num good'>−5.3</td><td class='num good'>−6.7</td><td class='num good'>−1.9</td></tr></tbody></table></div>
+
+  <p>Counting every send in the log gets the sign wrong for all three campaigns. Counting only sends before take-up removes the confirmation emails but not the exposure time, and the signs stay wrong. Adding the engagement score makes them larger, because offers go to customers whose score fell, so the model reads a low score plus an offer as the profile of a non-taker. The pooled hazard fixes the exposure problem, since it compares customers week by week while they are still at risk, but it holds the score fixed and recovers 70% to 89% of each effect across 10 datasets. LTMLE recovers 96% to 113%.</p>
+</section>
+
+<!-- 4 -->
+<section id="chain">
+  <h2>4. Earlier treatments cause later ones</h2>
+
+  <p>In a support chat, one handoff often leads to another. A transfer puts the customer back in a queue, the wait frustrates them, and a frustrated customer is more likely to be escalated. When the outcome is a complaint, the question is how much of it to attribute to each handoff type, and the escalation at the end of the chain is the easiest one to blame.</p>
+
+  <p>The simulation:</p>
+  <ul class="pts">
+    <li>50,000 chats of up to 40 turns. At each turn the chat can be transferred, escalated, requeued or handed over at the end of the agent's shift.</li>
+    <li>Transfers follow misrouting, escalations follow frustration, requeues follow customer idle time, and shift changes follow the agent's rota.</li>
+    <li>Every handoff adds waiting time and frustration. Frustration is observed with noise, as a sentiment score.</li>
+    <li>The outcome is a complaint during the chat. The chat ending without one is a competing event. As in real logs, some escalations are recorded after the complaint.</li>
+  </ul>
+
+  <p>After a transfer the next turn's wait averages 6.5 minutes, against 1.3 after a turn with no handoff, and after a requeue 16.1 minutes. Frustration rises 6 times as much in the turn after a transfer as after a turn without one. The chance of an escalation per turn goes from 1.5% to 3.3% once a chat has been transferred.</p>
+
+  <p>SHAP gives escalations 73% of the credit against a true 45%, and requeues 7% against 46%. Escalations collect credit from three places: the transfers that led to them, the frustration that predicts both escalation and complaint, and the 5% of escalations logged after the complaint. Requeues lose it because they work through waiting and frustration, and the model's average sentiment feature absorbs that path.</p>
+
+  <h3>Splitting the credit</h3>
+
+  <p>Attribution needs two numbers. The first is how much of the outcome the treatments cause at all. If no chat were ever handed off, complaints would fall by 27% (LTMLE's estimate averages 31%). The other 73% come from things such as the task and the customer's history, which aren't levers, so they aren't split. The second number is how to share the 27% across types. We use the effect of making each type 10% rarer, from how things run today:</p>
+
+  <ul class="pts">
+    <li><strong>It adds up.</strong> With a small cut, a chat rarely loses two handoffs at once, so the four effects sum to 0.79 complaints per 1,000 chats against 0.75 for cutting all four together.</li>
+    <li><strong>Knock-on effects go to the cause.</strong> Fewer transfers means fewer escalations later, and the transfer gets that credit.</li>
+    <li><strong>The data supports it.</strong> A 10% cut only needs chats like today's, so the weights from step 1 stay close to one.</li>
+    <li><strong>It answers a decision.</strong> Which handoff type to reduce first.</li>
+  </ul>
+
+  <div class="fig">
+    <div class="fig-hdr">
+      <div class="fig-title">Complaints avoided by making each handoff type 10% rarer</div>
+      <div class="fig-sub">LTMLE across 20 datasets of 50,000 chats, against the truth</div>
+    </div>
+    <div class="fig-body"><div class="legend"><span class="li"><svg width="20" height="4"><line x1="0" y1="2" x2="20" y2="2" stroke="#111827" stroke-width="2.5" stroke-dasharray=""/></svg>Truth</span><span class="li"><svg width="20" height="4"><line x1="0" y1="2" x2="20" y2="2" stroke="#1baf7a" stroke-width="2.5" stroke-dasharray=""/></svg>LTMLE: mean estimate and mean 95% interval</span></div><div><svg class="chart" viewBox="0 0 680 242"><line x1="120.0" x2="120.0" y1="8" y2="208" stroke="#e5e7eb"/><text x="120.0" y="223" text-anchor="middle" font-size="11" fill="#6b7280">0</text><line x1="218.2" x2="218.2" y1="8" y2="208" stroke="#e5e7eb"/><text x="218.2" y="223" text-anchor="middle" font-size="11" fill="#6b7280">0.2</text><line x1="316.4" x2="316.4" y1="8" y2="208" stroke="#e5e7eb"/><text x="316.4" y="223" text-anchor="middle" font-size="11" fill="#6b7280">0.4</text><line x1="414.5" x2="414.5" y1="8" y2="208" stroke="#e5e7eb"/><text x="414.5" y="223" text-anchor="middle" font-size="11" fill="#6b7280">0.6</text><line x1="512.7" x2="512.7" y1="8" y2="208" stroke="#e5e7eb"/><text x="512.7" y="223" text-anchor="middle" font-size="11" fill="#6b7280">0.8</text><line x1="610.9" x2="610.9" y1="8" y2="208" stroke="#e5e7eb"/><text x="610.9" y="223" text-anchor="middle" font-size="11" fill="#6b7280">1</text><text x="112" y="32.0" text-anchor="end" font-size="11" fill="#111827">escalation</text><line x1="259.4" x2="337.9" y1="28.0" y2="28.0" stroke="#1baf7a" stroke-width="3" opacity=".45"/><circle cx="298.7" cy="28.0" r="5" fill="#1baf7a" stroke="#fff" stroke-width="1.5"><title>Estimate 0.36</title></circle><line x1="294.8" x2="294.8" y1="18.0" y2="38.0" stroke="#111827" stroke-width="2.2"><title>Truth 0.36</title></line><text x="112" y="72.0" text-anchor="end" font-size="11" fill="#111827">requeue</text><line x1="252.3" x2="321.0" y1="68.0" y2="68.0" stroke="#1baf7a" stroke-width="3" opacity=".45"/><circle cx="286.7" cy="68.0" r="5" fill="#1baf7a" stroke="#fff" stroke-width="1.5"><title>Estimate 0.34</title></circle><line x1="295.8" x2="295.8" y1="58.0" y2="78.0" stroke="#111827" stroke-width="2.2"><title>Truth 0.36</title></line><text x="112" y="112.0" text-anchor="end" font-size="11" fill="#111827">shift change</text><line x1="120.0" x2="223.6" y1="108.0" y2="108.0" stroke="#1baf7a" stroke-width="3" opacity=".45"/><circle cx="141.7" cy="108.0" r="5" fill="#1baf7a" stroke="#fff" stroke-width="1.5"><title>Estimate 0.04</title></circle><line x1="139.7" x2="139.7" y1="98.0" y2="118.0" stroke="#111827" stroke-width="2.2"><title>Truth 0.04</title></line><text x="112" y="152.0" text-anchor="end" font-size="11" fill="#111827">transfer</text><line x1="120.0" x2="184.2" y1="148.0" y2="148.0" stroke="#1baf7a" stroke-width="3" opacity=".45"/><circle cx="134.5" cy="148.0" r="5" fill="#1baf7a" stroke="#fff" stroke-width="1.5"><title>Estimate 0.03</title></circle><line x1="135.2" x2="135.2" y1="138.0" y2="158.0" stroke="#111827" stroke-width="2.2"><title>Truth 0.03</title></line><text x="112" y="192.0" text-anchor="end" font-size="11" fill="#111827">all four</text><line x1="370.8" x2="599.8" y1="188.0" y2="188.0" stroke="#1baf7a" stroke-width="3" opacity=".45"/><circle cx="485.3" cy="188.0" r="5" fill="#1baf7a" stroke="#fff" stroke-width="1.5"><title>Estimate 0.74</title></circle><line x1="490.0" x2="490.0" y1="178.0" y2="198.0" stroke="#111827" stroke-width="2.2"><title>Truth 0.75</title></line><text x="390.0" y="238" text-anchor="middle" font-size="11" fill="#6b7280">Complaints avoided per 1,000 chats</text></svg></div></div>
+    <p class="fig-cap">Black tick: the true effect. Green: LTMLE's estimate averaged over 20 datasets, with the average 95% interval. True shares of the effect: escalation 45%, requeue 46%, shift change 5%, transfer 4%.</p>
+  </div>
+
+  <p>LTMLE's estimates average 95% to 110% of the truth for every type, and its intervals contain the truth in 90% to 100% of datasets. Escalations and requeues are clearly separated from zero. Shift changes and transfers aren't: their effects are about a tenth the size, and 50,000 chats can't tell them apart from zero.</p>
+
+  <p>Why not split with Shapley values over the handoff types? That needs the complaint rate under every combination of types removed entirely: with four types, 16 policies, such as "only escalations and requeues exist". Most of those worlds are far from anything in the data (section 6 shows how few chats look like "never transfer"), and Shapley values average over every order of removing types, when in the data the order is fixed by time. The package has a time-ordered split for readers who want one, but its standard errors were about 70% of the effects, against 11% for the 10% cut.</p>
+</section>
+
+<!-- 5 -->
+<section id="recovery">
+  <h2>5. Does LTMLE recover the truth?</h2>
+
+  <p>The sections so far used single datasets to show mechanisms. This one repeats each simulation and compares the methods on the policies they are most often used for: removing one treatment type entirely.</p>
+
+  <div class="fig">
+    <div class="fig-hdr">
+      <div class="fig-title">Mean estimate as a share of the true effect of removing each type</div>
+      <div class="fig-sub">10 datasets each for friction and campaigns, 20 for chats</div>
+    </div>
+    <div class="fig-body"><div class="legend"><span class="li"><svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="#eb6834"/></svg>Count regression</span><span class="li"><svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="#6b7280"/></svg>Pooled hazard</span><span class="li"><svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="#1baf7a"/></svg>LTMLE</span></div><div class="stack"><div><div class="panel-title">Friction and churn</div><svg class="chart" viewBox="0 0 680 202"><line x1="139.4" x2="139.4" y1="8" y2="168" stroke="#e5e7eb"/><text x="139.4" y="183" text-anchor="middle" font-size="11" fill="#6b7280">-50</text><line x1="236.6" x2="236.6" y1="8" y2="168" stroke="#e5e7eb"/><text x="236.6" y="183" text-anchor="middle" font-size="11" fill="#6b7280">0</text><line x1="333.7" x2="333.7" y1="8" y2="168" stroke="#e5e7eb"/><text x="333.7" y="183" text-anchor="middle" font-size="11" fill="#6b7280">50</text><line x1="430.9" x2="430.9" y1="8" y2="168" stroke="#e5e7eb"/><text x="430.9" y="183" text-anchor="middle" font-size="11" fill="#6b7280">100</text><line x1="528.0" x2="528.0" y1="8" y2="168" stroke="#e5e7eb"/><text x="528.0" y="183" text-anchor="middle" font-size="11" fill="#6b7280">150</text><line x1="625.1" x2="625.1" y1="8" y2="168" stroke="#e5e7eb"/><text x="625.1" y="183" text-anchor="middle" font-size="11" fill="#6b7280">200</text><line x1="236.6" x2="236.6" y1="8" y2="168" stroke="#6b7280"/><line x1="430.9" x2="430.9" y1="8" y2="168" stroke="#111827" stroke-width="2"/><text x="434.9" y="17" font-size="10" fill="#111827">truth</text><text x="112" y="32.0" text-anchor="end" font-size="11" fill="#111827">payment failure</text><circle cx="120.0" cy="19.0" r="4.5" fill="#eb6834" stroke="#fff" stroke-width="1.5"><title>Count regression: -294%</title></circle><text x="128.0" y="22.5" font-size="9.5" fill="#6b7280">wrong sign (-294%)</text><circle cx="340.8" cy="28.0" r="4.5" fill="#6b7280" stroke="#fff" stroke-width="1.5"><title>Pooled hazard: 54%</title></circle><circle cx="437.8" cy="37.0" r="4.5" fill="#1baf7a" stroke="#fff" stroke-width="1.5"><title>LTMLE: 104%</title></circle><text x="112" y="72.0" text-anchor="end" font-size="11" fill="#111827">card decline</text><circle cx="120.0" cy="59.0" r="4.5" fill="#eb6834" stroke="#fff" stroke-width="1.5"><title>Count regression: -626%</title></circle><text x="128.0" y="62.5" font-size="9.5" fill="#6b7280">wrong sign (-626%)</text><circle cx="340.6" cy="68.0" r="4.5" fill="#6b7280" stroke="#fff" stroke-width="1.5"><title>Pooled hazard: 54%</title></circle><circle cx="438.4" cy="77.0" r="4.5" fill="#1baf7a" stroke="#fff" stroke-width="1.5"><title>LTMLE: 104%</title></circle><text x="112" y="112.0" text-anchor="end" font-size="11" fill="#111827">app error</text><circle cx="120.0" cy="99.0" r="4.5" fill="#eb6834" stroke="#fff" stroke-width="1.5"><title>Count regression: -1563%</title></circle><text x="128.0" y="102.5" font-size="9.5" fill="#6b7280">wrong sign (-1,563%)</text><circle cx="323.1" cy="108.0" r="4.5" fill="#6b7280" stroke="#fff" stroke-width="1.5"><title>Pooled hazard: 45%</title></circle><circle cx="428.1" cy="117.0" r="4.5" fill="#1baf7a" stroke="#fff" stroke-width="1.5"><title>LTMLE: 99%</title></circle><text x="112" y="152.0" text-anchor="end" font-size="11" fill="#111827">re-verification</text><circle cx="120.0" cy="139.0" r="4.5" fill="#eb6834" stroke="#fff" stroke-width="1.5"><title>Count regression: -550%</title></circle><text x="128.0" y="142.5" font-size="9.5" fill="#6b7280">wrong sign (-550%)</text><circle cx="349.7" cy="148.0" r="4.5" fill="#6b7280" stroke="#fff" stroke-width="1.5"><title>Pooled hazard: 58%</title></circle><circle cx="435.0" cy="157.0" r="4.5" fill="#1baf7a" stroke="#fff" stroke-width="1.5"><title>LTMLE: 102%</title></circle><text x="392.0" y="198" text-anchor="middle" font-size="11" fill="#6b7280">Mean estimate, % of the true effect</text></svg></div><div><div class="panel-title">Campaigns and take-up</div><svg class="chart" viewBox="0 0 680 162"><line x1="139.4" x2="139.4" y1="8" y2="128" stroke="#e5e7eb"/><text x="139.4" y="143" text-anchor="middle" font-size="11" fill="#6b7280">-50</text><line x1="236.6" x2="236.6" y1="8" y2="128" stroke="#e5e7eb"/><text x="236.6" y="143" text-anchor="middle" font-size="11" fill="#6b7280">0</text><line x1="333.7" x2="333.7" y1="8" y2="128" stroke="#e5e7eb"/><text x="333.7" y="143" text-anchor="middle" font-size="11" fill="#6b7280">50</text><line x1="430.9" x2="430.9" y1="8" y2="128" stroke="#e5e7eb"/><text x="430.9" y="143" text-anchor="middle" font-size="11" fill="#6b7280">100</text><line x1="528.0" x2="528.0" y1="8" y2="128" stroke="#e5e7eb"/><text x="528.0" y="143" text-anchor="middle" font-size="11" fill="#6b7280">150</text><line x1="625.1" x2="625.1" y1="8" y2="128" stroke="#e5e7eb"/><text x="625.1" y="143" text-anchor="middle" font-size="11" fill="#6b7280">200</text><line x1="236.6" x2="236.6" y1="8" y2="128" stroke="#6b7280"/><line x1="430.9" x2="430.9" y1="8" y2="128" stroke="#111827" stroke-width="2"/><text x="434.9" y="17" font-size="10" fill="#111827">truth</text><text x="112" y="32.0" text-anchor="end" font-size="11" fill="#111827">info email</text><circle cx="120.0" cy="19.0" r="4.5" fill="#eb6834" stroke="#fff" stroke-width="1.5"><title>Count regression: -1557%</title></circle><text x="128.0" y="22.5" font-size="9.5" fill="#6b7280">wrong sign (-1,557%)</text><circle cx="409.7" cy="28.0" r="4.5" fill="#6b7280" stroke="#fff" stroke-width="1.5"><title>Pooled hazard: 89%</title></circle><circle cx="456.3" cy="37.0" r="4.5" fill="#1baf7a" stroke="#fff" stroke-width="1.5"><title>LTMLE: 113%</title></circle><text x="112" y="72.0" text-anchor="end" font-size="11" fill="#111827">offer email</text><circle cx="120.0" cy="59.0" r="4.5" fill="#eb6834" stroke="#fff" stroke-width="1.5"><title>Count regression: -567%</title></circle><text x="128.0" y="62.5" font-size="9.5" fill="#6b7280">wrong sign (-567%)</text><circle cx="373.3" cy="68.0" r="4.5" fill="#6b7280" stroke="#fff" stroke-width="1.5"><title>Pooled hazard: 70%</title></circle><circle cx="423.5" cy="77.0" r="4.5" fill="#1baf7a" stroke="#fff" stroke-width="1.5"><title>LTMLE: 96%</title></circle><text x="112" y="112.0" text-anchor="end" font-size="11" fill="#111827">push</text><circle cx="120.0" cy="99.0" r="4.5" fill="#eb6834" stroke="#fff" stroke-width="1.5"><title>Count regression: -3788%</title></circle><text x="128.0" y="102.5" font-size="9.5" fill="#6b7280">wrong sign (-3,788%)</text><circle cx="372.4" cy="108.0" r="4.5" fill="#6b7280" stroke="#fff" stroke-width="1.5"><title>Pooled hazard: 70%</title></circle><circle cx="448.1" cy="117.0" r="4.5" fill="#1baf7a" stroke="#fff" stroke-width="1.5"><title>LTMLE: 109%</title></circle><text x="392.0" y="158" text-anchor="middle" font-size="11" fill="#6b7280">Mean estimate, % of the true effect</text></svg></div><div><div class="panel-title">Chat handoffs and complaints</div><svg class="chart" viewBox="0 0 680 202"><line x1="139.4" x2="139.4" y1="8" y2="168" stroke="#e5e7eb"/><text x="139.4" y="183" text-anchor="middle" font-size="11" fill="#6b7280">-50</text><line x1="236.6" x2="236.6" y1="8" y2="168" stroke="#e5e7eb"/><text x="236.6" y="183" text-anchor="middle" font-size="11" fill="#6b7280">0</text><line x1="333.7" x2="333.7" y1="8" y2="168" stroke="#e5e7eb"/><text x="333.7" y="183" text-anchor="middle" font-size="11" fill="#6b7280">50</text><line x1="430.9" x2="430.9" y1="8" y2="168" stroke="#e5e7eb"/><text x="430.9" y="183" text-anchor="middle" font-size="11" fill="#6b7280">100</text><line x1="528.0" x2="528.0" y1="8" y2="168" stroke="#e5e7eb"/><text x="528.0" y="183" text-anchor="middle" font-size="11" fill="#6b7280">150</text><line x1="625.1" x2="625.1" y1="8" y2="168" stroke="#e5e7eb"/><text x="625.1" y="183" text-anchor="middle" font-size="11" fill="#6b7280">200</text><line x1="236.6" x2="236.6" y1="8" y2="168" stroke="#6b7280"/><line x1="430.9" x2="430.9" y1="8" y2="168" stroke="#111827" stroke-width="2"/><text x="434.9" y="17" font-size="10" fill="#111827">truth</text><text x="112" y="32.0" text-anchor="end" font-size="11" fill="#111827">transfer</text><circle cx="664.0" cy="19.0" r="4.5" fill="#eb6834" stroke="#fff" stroke-width="1.5"><title>Count regression: 598%</title></circle><text x="656.0" y="22.5" text-anchor="end" font-size="9.5" fill="#6b7280">598%</text><circle cx="599.1" cy="28.0" r="4.5" fill="#6b7280" stroke="#fff" stroke-width="1.5"><title>Pooled hazard: 187%</title></circle><circle cx="539.6" cy="37.0" r="4.5" fill="#1baf7a" stroke="#fff" stroke-width="1.5"><title>LTMLE: 156%</title></circle><text x="112" y="72.0" text-anchor="end" font-size="11" fill="#111827">escalation</text><circle cx="392.7" cy="59.0" r="4.5" fill="#eb6834" stroke="#fff" stroke-width="1.5"><title>Count regression: 80%</title></circle><circle cx="303.5" cy="68.0" r="4.5" fill="#6b7280" stroke="#fff" stroke-width="1.5"><title>Pooled hazard: 34%</title></circle><circle cx="431.6" cy="77.0" r="4.5" fill="#1baf7a" stroke="#fff" stroke-width="1.5"><title>LTMLE: 100%</title></circle><text x="112" y="112.0" text-anchor="end" font-size="11" fill="#111827">requeue</text><circle cx="360.2" cy="99.0" r="4.5" fill="#eb6834" stroke="#fff" stroke-width="1.5"><title>Count regression: 64%</title></circle><circle cx="271.8" cy="108.0" r="4.5" fill="#6b7280" stroke="#fff" stroke-width="1.5"><title>Pooled hazard: 18%</title></circle><circle cx="423.7" cy="117.0" r="4.5" fill="#1baf7a" stroke="#fff" stroke-width="1.5"><title>LTMLE: 96%</title></circle><text x="112" y="152.0" text-anchor="end" font-size="11" fill="#111827">shift change</text><circle cx="282.1" cy="139.0" r="4.5" fill="#eb6834" stroke="#fff" stroke-width="1.5"><title>Count regression: 23%</title></circle><circle cx="268.1" cy="148.0" r="4.5" fill="#6b7280" stroke="#fff" stroke-width="1.5"><title>Pooled hazard: 16%</title></circle><circle cx="395.3" cy="157.0" r="4.5" fill="#1baf7a" stroke="#fff" stroke-width="1.5"><title>LTMLE: 82%</title></circle><text x="392.0" y="198" text-anchor="middle" font-size="11" fill="#6b7280">Mean estimate, % of the true effect</text></svg></div></div></div>
+    <p class="fig-cap">100% is the truth. Count regression: a regression of the outcome on counts of each treatment before the outcome, plus customer features. Pooled hazard: the outcome this week (or turn) on this week's state and treatment. Estimates beyond the axis are written next to the edge.</p>
+  </div>
+
+  <p>The count regression gets the sign wrong for all seven weekly treatments, for the exposure-time reason in section 3. On chats it gets the signs right but not the sizes: 80% of the true effect for escalations, 64% for requeues and 598% for transfers. The pooled hazard is biased towards zero for every type except transfers, because it holds the state fixed. LTMLE lands at 96% to 113% on the weekly problems and 96% to 100% on escalations and requeues, with 95% intervals that contain the truth in 90% to 100% of datasets. Its two weak spots are transfers (156%) and shift changes (82%), which section 6 explains.</p>
+
+  <p>The two older g-methods, run on the same chats, agree on the large effects. The parametric g-formula, which models every confounder and simulates chats forward, lands at 93% for escalations and 96% for requeues. With 200,000 chats its error doesn't shrink, because it comes from modelling every confounder rather than from sample size. Inverse probability weighting lands at 109% and 99%, but at 222% for transfers, where the weights get large.</p>
+
+  <h3>How does this compare with existing packages?</h3>
+
+  <p>Two packages implement these methods: R's <a href="https://github.com/nt-williams/lmtp" target="_blank" rel="noopener">lmtp</a> (Williams and Díaz), which implements the same LTMLE, and Python's <a href="https://github.com/CausalInference/pygformula" target="_blank" rel="noopener">pygformula</a> (Harvard CAUSALab), which implements the parametric g-formula. We ran each on the same simulated chats as our own version, with the same kind of model.</p>
+
+  <div class='dtable-wrap'><table class='dtable'><caption>LTMLE in gmethods against R's lmtp on the same 20,000 chats: risk of a complaint by turn 10, change per 1,000 chats, logistic models in both. Standard errors in brackets.</caption><thead><tr><th>Policy</th><th class='num'>Truth</th><th class='num'>gmethods</th><th class='num'>lmtp</th></tr></thead><tbody><tr><td>never escalation</td><td class='num'>−2.86</td><td class='num'>−3.47 (0.60)</td><td class='num'>−3.87 (0.59)</td></tr><tr><td>never requeue</td><td class='num'>−1.84</td><td class='num'>−1.14 (0.35)</td><td class='num'>−1.12 (0.35)</td></tr><tr><td>never any</td><td class='num'>−5.49</td><td class='num'>−6.53 (1.36)</td><td class='num'>−5.18 (2.07)</td></tr></tbody></table></div>
+
+  <p>LTMLE and lmtp agree within one standard error, and their standard errors are close. Both miss the requeue effect by the same amount on this dataset, which points to sampling noise rather than to either implementation.</p>
+
+  <div class='dtable-wrap'><table class='dtable'><caption>The parametric g-formula in gmethods against pygformula on the same chats, logistic models in both: change in complaints per 1,000 chats.</caption><thead><tr><th>Policy</th><th class='num'>Truth</th><th class='num'>gmethods</th><th class='num'>pygformula</th></tr></thead><tbody><tr><td>never escalation</td><td class='num'>−4.09</td><td class='num'>−5.27</td><td class='num'>−4.30</td></tr><tr><td>never requeue</td><td class='num'>−3.09</td><td class='num'>−2.72</td><td class='num'>−1.89</td></tr><tr><td>never shift change</td><td class='num'>−1.32</td><td class='num'>−1.69</td><td class='num'>−1.73</td></tr><tr><td>never transfer</td><td class='num'>−0.45</td><td class='num'>−1.23</td><td class='num'>−1.42</td></tr><tr><td>never any</td><td class='num'>−5.69</td><td class='num'>−7.55</td><td class='num'>−7.06</td></tr></tbody></table></div>
+
+  <p>The two g-formula implementations are within about one complaint per 1,000 chats of each other, and both overstate the effect of transfers by the same margin. That shared error comes from the logistic models, not from the code.</p>
+</section>
+
+<!-- 6 -->
+<section id="rules">
+  <h2>6. When a rule forces the treatment</h2>
+
+  <p>Some treatments are set by a rule rather than by anyone's judgement. A chat is handed over when the agent's shift ends. A customer is asked to verify their identity again when the schedule says so. "Never hand over at shift end" is a reasonable question, but the data contains almost no chats where an agent stayed on past the end of their shift, so there is very little to learn from.</p>
+
+  <p>LTMLE shows this in its weights. Step 1 gives each row the ratio of its probability under the policy to its observed probability, multiplied over the weeks or turns so far. If the policy needs histories that almost never happen, a handful of rows get enormous weights and the rest count for little. The effective sample (the number of equally weighted rows that would give the same precision) shows how much of the data is doing the work.</p>
+
+  <div class="fig">
+    <div class="fig-hdr">
+      <div class="fig-title">How much of the data each chat policy can use</div>
+      <div class="fig-sub">LTMLE weights before truncation, one dataset of 50,000 chats</div>
+    </div>
+    <div class="fig-body"><div><svg class="chart" viewBox="0 0 680 212"><line x1="150.0" x2="150.0" y1="8" y2="178" stroke="#e5e7eb"/><text x="150.0" y="193" text-anchor="middle" font-size="11" fill="#6b7280">0</text><line x1="222.0" x2="222.0" y1="8" y2="178" stroke="#e5e7eb"/><text x="222.0" y="193" text-anchor="middle" font-size="11" fill="#6b7280">20</text><line x1="294.0" x2="294.0" y1="8" y2="178" stroke="#e5e7eb"/><text x="294.0" y="193" text-anchor="middle" font-size="11" fill="#6b7280">40</text><line x1="366.0" x2="366.0" y1="8" y2="178" stroke="#e5e7eb"/><text x="366.0" y="193" text-anchor="middle" font-size="11" fill="#6b7280">60</text><line x1="438.0" x2="438.0" y1="8" y2="178" stroke="#e5e7eb"/><text x="438.0" y="193" text-anchor="middle" font-size="11" fill="#6b7280">80</text><line x1="510.0" x2="510.0" y1="8" y2="178" stroke="#e5e7eb"/><text x="510.0" y="193" text-anchor="middle" font-size="11" fill="#6b7280">100</text><text x="142" y="29.0" text-anchor="end" font-size="11" fill="#111827">never requeue</text><rect x="150" y="15" width="354.9" height="20" rx="2" fill="#2a78d6"/><text x="510.9" y="29.0" font-size="10.5" fill="#6b7280">99% · max weight 10</text><text x="142" y="63.0" text-anchor="end" font-size="11" fill="#111827">never escalation</text><rect x="150" y="49" width="337.5" height="20" rx="2" fill="#2a78d6"/><text x="493.5" y="63.0" font-size="10.5" fill="#6b7280">94% · max weight 61</text><text x="142" y="97.0" text-anchor="end" font-size="11" fill="#111827">never transfer</text><rect x="150" y="83" width="56.7" height="20" rx="2" fill="#2a78d6"/><text x="212.7" y="97.0" font-size="10.5" fill="#6b7280">16% · max weight 663</text><text x="142" y="131.0" text-anchor="end" font-size="11" fill="#111827">halve shift change</text><rect x="150" y="117" width="10.4" height="20" rx="2" fill="#2a78d6"/><text x="166.4" y="131.0" font-size="10.5" fill="#6b7280">3% · max weight 1,889</text><text x="142" y="165.0" text-anchor="end" font-size="11" fill="#111827">never shift change</text><rect x="150" y="151" width="1.5" height="20" rx="2" fill="#2a78d6"/><text x="157.5" y="165.0" font-size="10.5" fill="#6b7280">0.1% · max weight 11,454</text><line x1="150" x2="150" y1="8" y2="178" stroke="#6b7280"/><text x="330.0" y="208" text-anchor="middle" font-size="11" fill="#6b7280">Effective sample, % of chat-turns</text></svg></div></div>
+    <p class="fig-cap">Effective sample: (Σw)² / Σw² as a share of chat-turns, using the weights before truncation. Max weight: the largest single weight.</p>
+  </div>
+
+  <p>"Never requeue" and "never escalation" keep almost all of the data. "Never transfer" keeps 16%: misrouted chats are transferred within a few turns, so long spells with the wrong team are rare. "Never shift change" keeps 0.1%, with one chat-turn weighted 11,454 times.</p>
+
+  <p>Truncating the largest weights doesn't fix it. At the default (the 99.9th percentile), "never shift change" lands at 73% to 88% of the truth whether agents stay past their shift in 1%, 10% or 30% of cases. Without truncation the estimate becomes unstable. The friction simulation has the same problem with scheduled re-verification: cutting it by 10% lands at 188% of the truth.</p>
+
+  <p>So check the weights before reporting a policy (<code>ltmle_weight_summary</code> in the package does this). If the effective sample is small, ask a question the data can answer about the rule itself, such as how long agents may run past their shift, rather than about the treatment disappearing.</p>
+</section>
+
+<!-- FAQ -->
+<section id="faq">
+  <h2>Frequently asked questions</h2>
+
+  <details class="faq"><summary>Why not add the state as a feature in the SHAP model?</summary>
+  <p>Because the state is both a confounder and part of the effect. The SHAP models here already include the average engagement signal. In the campaign simulation, adding the engagement score to the count regression made the wrong-signed effects larger (section 3). In the chats, adding sentiment changed almost nothing.</p></details>
+
+  <details class="faq"><summary>What if I fit the model on the weekly panel instead of one row per customer?</summary>
+  <p>That fixes exposure time and the post-outcome logs, and it is the pooled hazard in section 5. It still holds the state fixed, so it misses the part of each effect that runs through the state: across the three problems it recovered 16% to 89% of the true effects, transfers aside.</p></details>
+
+  <details class="faq"><summary>Can double machine learning or causal forests do this?</summary>
+  <p>They estimate the effect of a single treatment given the covariates at that time. Applied to one week, that is the effect of this week's treatment with everything else held fixed, which leaves out what the treatment does to later weeks. That is the same gap the pooled hazard has. The g-methods exist to follow the effect through those later weeks.</p></details>
+
+  <details class="faq"><summary>How much data do I need?</summary>
+  <p>The simulations use 50,000 customers or chats. With a complaint rate of 2%, effects of about 0.36 complaints per 1,000 chats had standard errors of about 11% of their size. Effects a tenth that size could not be told apart from zero. Rare outcomes, rare treatments and policies far from today all need more.</p></details>
+
+  <details class="faq"><summary>What if the state that drives the treatment isn't recorded?</summary>
+  <p>Then no method on this page removes the confounding: LTMLE assumes that, given the recorded history, who gets treated is as good as random. The simulators have presets with an unmeasured confounder, which can be used to see how far the estimates move. The engagement in these simulations is never observed directly, only through transactions, app sessions and sentiment, which are noisy, and that was enough here.</p></details>
+
+  <details class="faq"><summary>Is SHAP wrong?</summary>
+  <p>No. It does what it is designed to do: explain the model's predictions. A churn model with SHAP is a good way to see which customers are at risk and why the model thinks so. The problem is reading those explanations as the effect of changing a treatment.</p></details>
+</section>
+
+<!-- conclusion -->
+<section id="together">
+  <h2>Conclusion</h2>
+
+  <p>When treatments repeat over time and react to the customer's state, a model of the outcome explained with SHAP answers a different question from the one attribution asks:</p>
+
+  <ul class="pts">
+    <li><strong>The treatment follows the state.</strong> The customers who meet the most friction churn the least. Controlling for the state removes that confounding but also removes the part of the effect that runs through the state.</li>
+    <li><strong>Exposure time and the log.</strong> Customers who leave or convert early have fewer weeks to be treated, and logs keep recording treatments after the outcome. Both can flip the sign of an effect.</li>
+    <li><strong>Treatments cause treatments.</strong> The last treatment in a chain collects the credit for the ones that led to it.</li>
+    <li><strong>The fix.</strong> Ask a policy question (what if this happened 10% less?) and answer it with a g-method. LTMLE recovered every well-supported effect in three simulations to within about 15%.</li>
+    <li><strong>Check the weights.</strong> For treatments a rule forces, the data can't say what happens without them. Ask about the rule instead.</li>
+  </ul>
+
+  <p>The simulations use one data-generating process per problem, a known set of confounders and samples of 50,000. They don't show how often these problems occur in a given dataset. The questions to ask are the same, though: does the treatment depend on a state that changes over time, does the treatment change that state, how long was each customer observed, and does the log record anything after the outcome?</p>
+
+  <p>The package, <a href="https://github.com/raz1470/gmethods" target="_blank" rel="noopener">gmethods</a>, has the three simulators, LTMLE, the g-formula and IPW, the attribution functions and the script that builds every chart and number in this article.</p>
+
+  <h3>References</h3>
+  <ul class="refs">
+    <li>Díaz, I., Williams, N., Hoffman, K. L. and Schenck, E. J. (2021). Nonparametric causal effects based on longitudinal modified treatment policies. <em>Journal of the American Statistical Association</em>, 118(542), 846–857.</li>
+    <li>Lundberg, S. M. and Lee, S.-I. (2017). A unified approach to interpreting model predictions. <em>Advances in Neural Information Processing Systems</em>, 30.</li>
+    <li>Robins, J. (1986). A new approach to causal inference in mortality studies with a sustained exposure period. <em>Mathematical Modelling</em>, 7(9–12), 1393–1512.</li>
+    <li>van der Laan, M. J. and Gruber, S. (2012). Targeted minimum loss based estimation of causal effects of multiple time point interventions. <em>The International Journal of Biostatistics</em>, 8(1).</li>
+    <li>Williams, N. T. and Díaz, I. (2023). lmtp: an R package for estimating the causal effects of modified treatment policies. <em>Observational Studies</em>, 9(2), 103–122.</li>
+  </ul>
+</section>
+
+
+</main>
+
+<footer>Simulated data throughout. Every chart and number on this page is generated by <code>tools/build_article.py</code> in the gmethods repo from the outputs of the experiment scripts.</footer>
+
+<script>
+(function () {
+  const links = document.querySelectorAll('.snav a');
+  const secs = [...links].map(a => document.querySelector(a.getAttribute('href')));
+  addEventListener('scroll', () => {
+    let k = 0; secs.forEach((s, i) => { if (s && s.getBoundingClientRect().top < 120) k = i; });
+    links.forEach((a, i) => a.classList.toggle('active', i === k));
+  }, { passive: true });
+})();
+</script>
+</body>
+</html>
