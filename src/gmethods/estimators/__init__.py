@@ -11,7 +11,7 @@ from .diagnostics import (
 from .gformula import GFormula
 from .ipw import IPW
 from .ltmle import ICE, LTMLE
-from .naive import CountRegression, PooledHazard
+from .naive import CountRegression, PooledHazard, ShapDrivers
 
 __all__ = [
     "HANDOFF_COVARIATES",
@@ -23,6 +23,7 @@ __all__ = [
     "GFormula",
     "PanelSpec",
     "PooledHazard",
+    "ShapDrivers",
     "bootstrap",
     "ltmle_weight_summary",
     "natural_course_check",

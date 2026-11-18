@@ -18,7 +18,15 @@ from .estimators import (
 )
 from .interventions import HANDOFF_TYPES
 from .results import RiskTable
-from .sim import ChatSimulator, Scenario, SimData
+from .sim import (
+    CampaignScenario,
+    CampaignSimulator,
+    ChatSimulator,
+    FrictionScenario,
+    FrictionSimulator,
+    Scenario,
+    SimData,
+)
 
 __version__ = "0.1.0"
 
@@ -27,8 +35,12 @@ __all__ = [
     "ICE",
     "IPW",
     "LTMLE",
+    "CampaignScenario",
+    "CampaignSimulator",
     "ChatSimulator",
     "CountRegression",
+    "FrictionScenario",
+    "FrictionSimulator",
     "GFormula",
     "PanelSpec",
     "PooledHazard",

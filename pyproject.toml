@@ -17,6 +17,9 @@ dependencies = [
     "scipy>=1.13",
 ]
 
+[project.optional-dependencies]
+shap = ["shap>=0.46"]
+
 [dependency-groups]
 # `test` is the lean slice CI installs: package deps plus pytest and ruff.
 # `dev` adds Jupyter and plotting for notebooks and article figures.
@@ -31,6 +34,7 @@ dev = [
     "matplotlib>=3.8",
     "nbconvert>=7.0",
     "nbformat>=5.9",
+    "shap>=0.46",
     { include-group = "test" },
 ]
 
@@ -54,6 +58,8 @@ extend-ignore-names = ["X", "T", "F", "_X"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/gmethods/sim/scenario.py" = ["RUF009"]
+"src/gmethods/sim/friction.py" = ["RUF009"]
+"src/gmethods/sim/campaign.py" = ["RUF009"]
 # Notebooks are narrative: imports sit next to the cell that uses them.
 "notebooks/*.ipynb" = ["E501", "E402", "I001", "F401", "N806"]
 # Research scripts kept as they were run.

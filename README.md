@@ -36,7 +36,7 @@ print(est.compare(truth))
 
 | Module | What it does |
 | --- | --- |
-| `gmethods.sim` | `Scenario` (every knob, six presets) and `ChatSimulator` (data and ground truth) |
+| `gmethods.sim` | `ChatSimulator` (support chats and handoffs), `FrictionSimulator` (product friction and churn), `CampaignSimulator` (campaigns and product take-up), each with scenarios and ground truth |
 | `gmethods.interventions` | `natural()`, `never(*types)`, `never_any()`, `scale(*types, factor)`, `standard_set()`, `scale_set()` |
 | `gmethods.estimators` | `LTMLE` and `ICE`, `GFormula`, `IPW`, naive baselines, cluster `bootstrap`, diagnostics |
 | `gmethods.attribution` | Marginal and time-ordered splits of complaints across handoff types |
@@ -96,11 +96,13 @@ and `--summarise`.
 2. [`02_estimators`](notebooks/02_estimators.ipynb): every estimator on one dataset, LTMLE intervals, diagnostics.
 3. [`03_recovery`](notebooks/03_recovery.ipynb): bias and RMSE across repeated datasets.
 4. [`04_attribution`](notebooks/04_attribution.ipynb): share of complaints caused by handoffs, and the marginal split by type.
+5. [`05_friction_and_campaigns`](notebooks/05_friction_and_campaigns.ipynb): churn from product friction and product take-up from campaigns.
 
 ## Docs
 
 - [The simulator](docs/simulator.md): time grid, variables, structural equations, presets.
 - [Estimators](docs/estimators.md): LTMLE, g-formula, IPW, naive baselines, bootstrap, diagnostics, using your own panel.
+- [Friction and campaign simulators](docs/weekly_simulators.md): the same methods on churn from product friction and on product take-up from campaigns.
 - [Attribution](docs/attribution.md): how many complaints handoffs cause, and the marginal split across handoff types.
 
 ## Development

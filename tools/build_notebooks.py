@@ -468,6 +468,134 @@ time_ordered[["per_1000", "share_of_handoff_complaints"]].round(3)
     ]
 
 
+def nb05():
+    def section(name, cls, sc, outcome, key):
+        return [
+            md(f"## {name}"),
+            code(f"""
+sim = {cls}({sc}.preset("baseline"))
+data = sim.simulate(n=50_000, seed=1)
+spec = sim.panel_spec()
+regimes = iv.standard_set(sim.LEVELS) + iv.scale_set(sim.LEVELS, factor=0.9)[1:]
+truth = pd.read_csv("../results/truth_{key}.csv", index_col="regime")
+print(f"{outcome} per 1,000 customers: {{truth.loc['natural_course', 'risk'] * 1000:.1f}}")
+model = LTMLE(spec).fit(data.panel)
+rd = pd.DataFrame({{
+    "truth": truth["rd"],
+    "count, before event or all": CountRegression.for_simulator(
+        sim, "before_complaint_or_all").fit(data.customers).estimate(regimes).to_frame()["rd"],
+    "pooled hazard": PooledHazard(spec).fit(data.panel).estimate(regimes).to_frame()["rd"],
+    "LTMLE": model.estimate(regimes).to_frame()["rd"],
+}}).drop(index="natural_course") * 1000
+rd.round(2)
+"""),
+            code("""
+shown = [r for r in rd.index if r.startswith("never_")]
+fig, ax = plt.subplots(figsize=(8, 3.4))
+y = np.arange(len(shown))
+for j, name in enumerate(["pooled hazard", "LTMLE"]):
+    ax.scatter(rd.loc[shown, name], y + (j - 0.5) * 0.18, s=40, color=SERIES[j],
+               edgecolor="white", linewidth=1, label=name, zorder=3)
+ax.scatter(rd.loc[shown, "truth"], y, marker="|", s=450, color=INK, lw=2.5,
+           label="truth", zorder=4)
+ax.set_yticks(y, [s.removeprefix("never_").replace("_", " ") for s in shown])
+ax.invert_yaxis()
+ax.axvline(0, color=MUTED, lw=0.8)
+ax.set_xlabel("change per 1,000 customers when removed")
+ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1), fontsize=8)
+plt.tight_layout()
+"""),
+            md("""
+The marginal split: what each type changes if it were 10% rarer than today,
+next to what a model-plus-SHAP driver analysis would report.
+"""),
+            code(f"""
+split = attribute_marginal(model, factor=0.9, names=sim.LEVELS)
+true_split = marginal_from_risks(truth["risk"].to_dict(), factor=0.9, names=sim.LEVELS)
+shap_drivers = ShapDrivers.for_simulator(sim).fit(data.customers).drivers()
+types = list(sim.LEVELS[1:])
+pd.DataFrame({{
+    "true share": true_split.loc[types, "share"],
+    "LTMLE share": split.loc[types, "share"],
+    "SHAP share": shap_drivers["share"],
+    "SHAP direction": np.sign(shap_drivers["mean_shap_when_present"]).map(
+        {{1.0: "raises {outcome}", -1.0: "lowers {outcome}"}}),
+}}).round(2)
+"""),
+        ]
+
+    return [
+        md("""
+# 05. Product friction and customer campaigns
+
+The same estimators on two more problems with the same shape: a treatment
+that reacts to a customer's state and changes it.
+
+- **Friction and churn:** failed payments, card declines, app errors and
+  re-verification checks lower engagement, and engagement drives both later
+  friction and churn.
+- **Campaigns and take-up:** a CRM rule targets emails and pushes on an
+  engagement score, and the campaigns move interest and fatigue, which move
+  the score.
+
+In both, the count regression gets the sign wrong (the "before event, or
+all" version is shown; the others are worse). Customers who churn or take
+up early have fewer weeks in which to be treated. A boosted model read
+with SHAP, the usual driver analysis, ranks the types wrongly and gets
+some directions backwards for the same reasons.
+"""),
+        code("""
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from gmethods import (
+    LTMLE, CampaignScenario, CampaignSimulator, CountRegression,
+    FrictionScenario, FrictionSimulator, PooledHazard,
+)
+from gmethods import interventions as iv
+from gmethods.attribution import attribute_marginal, marginal_from_risks
+from gmethods.estimators import ShapDrivers
+
+sys.path.insert(0, str(Path("..").resolve() / "tools"))
+from recovery_weekly import summarise
+
+pd.set_option("display.width", 120)
+"""),
+        code(STYLE),
+        *section(
+            "Friction and churn",
+            "FrictionSimulator",
+            "FrictionScenario",
+            "churn",
+            "friction",
+        ),
+        *section(
+            "Campaigns and take-up",
+            "CampaignSimulator",
+            "CampaignScenario",
+            "take-up",
+            "campaign",
+        ),
+        md("""
+## Recovery across datasets
+
+Ten datasets of 50,000 customers each. Regenerate with
+`uv run python tools/recovery_weekly.py --sim friction --reps 10` (and
+`--sim campaign`).
+"""),
+        code("""
+for name in ["friction", "campaign"]:
+    out = summarise(name).xs("ltmle", level="estimator")
+    out = out[["rd_true", "rd_mean", "sd"]].mul(1000).join(out[["coverage", "reps"]])
+    print(name)
+    display(out.round(3))
+"""),
+    ]
+
+
 def main(only: list[str]):
     """Build every notebook, or only those whose name starts with ``only``."""
     OUT.mkdir(exist_ok=True)
@@ -476,6 +604,7 @@ def main(only: list[str]):
         ("02_estimators", nb02()),
         ("03_recovery", nb03()),
         ("04_attribution", nb04()),
+        ("05_friction_and_campaigns", nb05()),
     ]:
         if only and not any(name.startswith(o) for o in only):
             continue
