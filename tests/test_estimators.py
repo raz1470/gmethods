@@ -273,3 +273,12 @@ class TestStack:
         est = make_learner("stack", "regress", [False] * 2, params=FAST).fit(X, y)
         assert (est.weights_ >= 0).all()
         assert np.corrcoef(est.predict(X), y)[0, 1] > 0.8
+
+
+def test_ltmle_weight_summary(fitted):
+    from gmethods.estimators import ltmle_weight_summary
+
+    out = ltmle_weight_summary(fitted, [iv.never("escalation"), iv.never_any()])
+    assert (out["max"] >= out["p999"]).all()
+    assert out.loc["never_any", "ess_share"] <= 1.0
+    assert fitted.truncate == 0.999

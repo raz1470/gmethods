@@ -64,12 +64,60 @@ influence function gives intervals without a bootstrap.
   the risk at that turn).
 - Intervals use the influence function summed within customers.
 
+Cross-check against R's `lmtp` (`tools/benchmark_lmtp.py`, 20,000 chats,
+risk by turn 10, logistic models in both), RD per 1,000 chats:
+
+| Policy | Truth | LTMLE | `lmtp` |
+| --- | --- | --- | --- |
+| never escalation | −2.86 | −3.47 (SE 0.61) | −3.88 (SE 0.59) |
+| never requeue | −1.84 | −1.15 (SE 0.35) | −1.13 (SE 0.35) |
+| never any | −5.49 | −6.53 (SE 1.36) | −5.18 (SE 2.08) |
+
+The two agree within one standard error, and their standard errors match
+closely. Both miss the requeue truth on this one dataset by the same
+amount, which points to sampling noise rather than either implementation.
+`lmtp` uses the previous turn's covariates (`k = 1`) plus cumulative
+handoff counts; `gmethods` uses the same plus lags and turns since the
+last handoff.
+
 Defaults: logistic outcome regressions (`learner="linear"`) and a boosted
 treatment model (`treatment_learner="hgb"`). Shift changes are near-certain
 once a shift runs out, a threshold a logistic treatment model cannot
 represent. A boosted or stacked outcome model in ICE compounds small
 calibration errors over 40 backward steps; see the README for what was
 tried.
+
+## Positivity: check the weights before trusting a regime
+
+```python
+from gmethods.estimators import ltmle_weight_summary
+ltmle_weight_summary(model, iv.standard_set()[1:] + iv.scale_set()[1:])
+```
+
+Reports the cumulative density-ratio weights before truncation. In the
+`baseline` scenario (50,000 chats):
+
+| Regime | Max weight | Effective sample share |
+| --- | --- | --- |
+| never escalation | 61 | 94% |
+| never requeue | 10 | 99% |
+| never transfer | 663 | 16% |
+| never shift change | 11,454 | 0.1% |
+| halve shift change | 1,889 | 3% |
+
+Shift changes are nearly forced by the rota, so the few chats that carried
+on past a shift end get enormous weights. Truncating at the 99.9th
+percentile (the default) caps 0.1% of turns and leaves "never shift change"
+biased towards zero: 73% to 88% of the truth whether agents stay past shift
+end 1%, 10% or 30% of the time (`tools/positivity_shift.py`). Truncating
+less makes it unstable instead (estimates of −4.9 against a true −1.3 per
+1,000 with no truncation). Halving shift changes is better supported but
+still noisy, with a standard error the size of the effect.
+
+So: report regimes whose effective sample share is high. For a handoff a
+rule nearly forces, ask a question the data can answer about the rule
+itself (how long agents may run past their shift) rather than about the
+handoff disappearing.
 
 ## Learners
 

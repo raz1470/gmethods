@@ -66,7 +66,8 @@ regime.
 - LTMLE has no systematic bias. Its 95% intervals cover the truth in
   75% to 100% of datasets (92% on average). Shift changes are the weak
   spot: a shift that runs out forces the handoff, so "no shift change" is
-  barely observed.
+  barely observed. `ltmle_weight_summary` flags it (maximum weight above
+  10,000, effective sample 0.1%).
 - At 50,000 chats the g-formula often has the lower RMSE: it is biased but
   stable, while LTMLE pays for being unbiased with more variance.
 - At 200,000 chats (three datasets) LTMLE's RMSE falls by 2 to 4 times and
@@ -81,9 +82,10 @@ regime.
   logged after a complaint look like causes of it. The pooled hazard holds
   frustration and waits at their observed values and misses most of each
   effect.
-- The linear g-formula agrees with `pygformula` (Harvard CAUSALab) on the
-  same panel (`results/benchmark_pygformula.csv`,
-  `tools/benchmark_pygformula.py`).
+- Cross-checks on the same panels: the linear g-formula agrees with
+  `pygformula` (Harvard CAUSALab), and LTMLE agrees with R's `lmtp`
+  (Williams and Díaz) on effects and standard errors
+  (`results/benchmark_*.csv`, `tools/benchmark_*`).
 
 Regenerate with `uv run python tools/recovery.py --preset baseline --reps 20`
 and `--summarise`.

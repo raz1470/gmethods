@@ -4,6 +4,7 @@ lmtp (Williams and Díaz) implements TMLE for modified treatment policies,
 the method gmethods.LTMLE follows. Both estimate the risk of a complaint by
 turn ``tau`` under "never k" policies, with chat end as a competing event.
 
+    Rscript -e 'install.packages("lmtp")'   # once; tested with lmtp 1.5.4
     uv run python tools/benchmark_lmtp.py write results/lmtp 20000 10
     Rscript tools/benchmark_lmtp.R results/lmtp 10
     uv run python tools/benchmark_lmtp.py compare results/lmtp 10

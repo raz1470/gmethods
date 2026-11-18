@@ -2,7 +2,12 @@
 
 from ._features import HANDOFF_COVARIATES, CovariateSpec, PanelSpec
 from .bootstrap import bootstrap, resample_clusters
-from .diagnostics import natural_course_check, positivity_table, weight_summary
+from .diagnostics import (
+    ltmle_weight_summary,
+    natural_course_check,
+    positivity_table,
+    weight_summary,
+)
 from .gformula import GFormula
 from .ipw import IPW
 from .ltmle import ICE, LTMLE
@@ -19,6 +24,7 @@ __all__ = [
     "PanelSpec",
     "PooledHazard",
     "bootstrap",
+    "ltmle_weight_summary",
     "natural_course_check",
     "positivity_table",
     "resample_clusters",

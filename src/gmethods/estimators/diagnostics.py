@@ -73,3 +73,44 @@ def weight_summary(ipw: IPW) -> pd.DataFrame:
     if not hasattr(ipw, "weight_summary_"):
         raise RuntimeError("run estimate() first")
     return pd.DataFrame(ipw.weight_summary_).T
+
+
+def ltmle_weight_summary(model, interventions, threshold: float = 20.0) -> pd.DataFrame:
+    """Density-ratio weights behind each LTMLE regime: a positivity check.
+
+    For each regime, over chat-turns still followed under it (weight above
+    zero), using the weights before truncation: the mean and maximum
+    cumulative weight, its 99.9th percentile, the share of turns above
+    ``threshold``, the share the model's truncation caps, and the effective
+    sample size as a share of those turns.
+
+    Read ``max`` and ``share_capped`` first. A handoff that a rule nearly
+    forces (a shift running out) leaves a few chats that carried on without
+    it; their weights are huge. Truncation hides that and biases the
+    estimate, while no truncation leaves it unstable. Either way the regime
+    is poorly supported; report a gentler one (halving instead of removing).
+    """
+    rows = {}
+    keep = model.truncate
+    try:
+        for iv in interventions:
+            model.truncate = None
+            raw = model._weights(iv)
+            model.truncate = keep
+            capped = model._weights(iv)
+            pos = raw > 0
+            w = raw[pos]
+            if len(w) == 0:
+                rows[iv.name] = {}
+                continue
+            rows[iv.name] = {
+                "mean": float(w.mean()),
+                "max": float(w.max()),
+                "p999": float(np.quantile(w, 0.999)),
+                f"share_gt_{threshold:g}": float((w > threshold).mean()),
+                "share_capped": float((capped[pos] < w).mean()),
+                "ess_share": float(w.sum() ** 2 / (w**2).sum() / len(w)),
+            }
+    finally:
+        model.truncate = keep
+    return pd.DataFrame(rows).T
