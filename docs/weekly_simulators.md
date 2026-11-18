@@ -157,7 +157,14 @@ Shares of the treatment effect, one dataset of 50,000 customers:
   requeue 8% (true 46%), transfer 17% (true 4%). Escalations logged after
   complaints inflate escalation; requeues work through waits and
   frustration, which the summary averages away.
-- `tools/make_shap_figure.py` draws all three problems side by side
-  (`assets/shap_vs_truth.png`, `results/shap_vs_truth.csv`).
+- None of this is one unlucky dataset. Over 10 datasets per problem
+  SHAP ranks card declines first in friction and push first in campaigns
+  every time, and the direction it credits never flips in
+  those two problems. Requeue's SHAP share stays
+  between 5% and 9% against a true 46%.
+- `tools/make_shap_figure.py --reps 10` draws all three problems side by
+  side with 10th to 90th percentile whiskers (`assets/shap_vs_truth.png`,
+  `results/shap_vs_truth.csv`, per-dataset rows in
+  `results/shap_robustness.csv`). It resumes from the per-dataset file.
 - SHAP is faithful to the model. The model is faithful to the data. Neither
   answers what would happen if a friction type or campaign were reduced.

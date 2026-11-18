@@ -2,13 +2,31 @@
 
 [![CI](https://github.com/raz1470/gmethods/actions/workflows/ci.yml/badge.svg)](https://github.com/raz1470/gmethods/actions/workflows/ci.yml)
 
-**G-methods for time-varying confounding, tested on simulated support chats where the true effect of every handoff is known.**
+**How wrong are SHAP "drivers" when treatments repeat over time? This package simulates three problems where the true answer is known, and estimates it with g-methods.**
 
-- A handoff (transfer, escalation, requeue, shift change) makes the customer wait and raises their frustration. Frustration then drives later escalations and complaints. The confounder is caused by earlier treatment, so regression cannot both adjust for it and keep the effect that runs through it.
-- LTMLE (doubly robust) recovers every effect without bias across 20 simulated datasets, with influence-function intervals. The parametric g-formula and IPW are included as the classic baselines and cross-checks.
-- Naive analyses get the size and even the ranking of the handoff effects wrong. Counting handoffs from the raw log doubles the escalation effect, because escalations are logged after complaints.
+A common way to find what drives churn or complaints is to fit a model and rank features by SHAP. When customers get a sequence of treatments, and each one changes the state that decides the next, that ranking answers the wrong question.
 
-![Estimated effect of removing each handoff type, by estimator, against the truth.](https://raw.githubusercontent.com/raz1470/gmethods/main/assets/hero.png)
+![SHAP share of each treatment type against its true share of the effect, in three simulated problems.](https://raw.githubusercontent.com/raz1470/gmethods/main/assets/shap_vs_truth.png)
+
+Across 10 simulated datasets per problem:
+
+- **Friction and churn.** SHAP ranks card declines first in every dataset (38% of the credit). Their true share is 16%. It says three of the four frictions lower churn, when all four raise it.
+- **Campaigns and take-up.** SHAP ranks push first in every dataset (45%). Its true share is 12%. It says push and the offer email lower take-up, when both raise it and the offer has the largest true effect.
+- **Chat handoffs and complaints.** Requeues cause 46% of the effect and SHAP gives them 7%. Escalations get 73% against a true 45%, partly because escalations are logged after complaints.
+
+SHAP explains the model's predictions. Here the predictions mix the treatment effect with the state that led to the treatment and with what happened after the outcome. LTMLE, a doubly robust g-method, targets the effect itself and recovers it to within a few percent in all three problems.
+
+![Mean estimate as a share of the true effect: count regression, pooled hazard and LTMLE.](https://raw.githubusercontent.com/raz1470/gmethods/main/assets/fig_estimate_vs_truth.png)
+
+## Why this is hard
+
+![Causal diagram: the treatment at t moves the state at t+1, which confounds the treatment at t+1.](https://raw.githubusercontent.com/raz1470/gmethods/main/assets/fig_diagram.png)
+
+A treatment (a friction, a campaign, a handoff) changes the customer's next state (engagement, frustration, wait). That state then drives the next treatment and the outcome. Adjusting for it blocks part of the effect, and leaving it out confounds the next treatment. Regression cannot do both, and neither can a predictive model with SHAP on top. G-methods (Robins) were built for this case.
+
+One simulated chat makes it concrete: a transfer at turn 2 leads to a 26-minute wait at turn 3, frustration builds, the chat is escalated at turn 7 and the customer complains at turn 8.
+
+![One simulated chat, turn by turn.](https://raw.githubusercontent.com/raz1470/gmethods/main/assets/fig_walkthrough.png)
 
 ## Quick start
 
@@ -38,14 +56,14 @@ print(est.compare(truth))
 | --- | --- |
 | `gmethods.sim` | `ChatSimulator` (support chats and handoffs), `FrictionSimulator` (product friction and churn), `CampaignSimulator` (campaigns and product take-up), each with scenarios and ground truth |
 | `gmethods.interventions` | `natural()`, `never(*types)`, `never_any()`, `scale(*types, factor)`, `standard_set()`, `scale_set()` |
-| `gmethods.estimators` | `LTMLE` and `ICE`, `GFormula`, `IPW`, naive baselines, cluster `bootstrap`, diagnostics |
-| `gmethods.attribution` | Marginal and time-ordered splits of complaints across handoff types |
+| `gmethods.estimators` | `LTMLE` and `ICE`, `GFormula`, `IPW`, naive baselines including `ShapDrivers`, cluster `bootstrap`, diagnostics |
+| `gmethods.attribution` | Marginal and time-ordered splits of the outcome across treatment types |
 | `gmethods.results` | `RiskTable`: risk, RD, RR and complaints avoided per 1,000 chats |
 
 The same intervention objects drive the truth and every estimator, so a
 regime cannot mean one thing in the truth and another in an estimate.
 
-## Recovery study
+## Recovery study: chat handoffs
 
 Twenty datasets of 50,000 chats from the `baseline` preset (ten for the
 g-formula and the naive baselines). Mean estimate as a share of the true
@@ -68,6 +86,9 @@ regime.
   spot: a shift that runs out forces the handoff, so "no shift change" is
   barely observed. `ltmle_weight_summary` flags it (maximum weight above
   10,000, effective sample 0.1%).
+
+  ![Effective sample and maximum weight for each regime.](https://raw.githubusercontent.com/raz1470/gmethods/main/assets/fig_weights.png)
+
 - At 50,000 chats the g-formula often has the lower RMSE: it is biased but
   stable, while LTMLE pays for being unbiased with more variance.
 - At 200,000 chats (three datasets) LTMLE's RMSE falls by 2 to 4 times and
@@ -113,8 +134,9 @@ uv run --no-default-groups --group test ruff check . --fix
 uv run --no-default-groups --group test pytest -q
 ```
 
-Notebooks are built by `tools/build_notebooks.py` and the recovery study by
-`tools/recovery.py`.
+Notebooks are built by `tools/build_notebooks.py`, the recovery study by
+`tools/recovery.py`, the SHAP figure by `tools/make_shap_figure.py` and the
+other figures by `tools/make_figures.py`.
 
 ## Licence
 
