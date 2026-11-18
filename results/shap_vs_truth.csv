@@ -1,0 +1,12 @@
+problem,outcome,type,true_share,shap_share,shap_direction
+Friction and churn,churn,payment_failure,0.27494635146072366,0.04672276166794328,lowers
+Friction and churn,churn,card_decline,0.16264972061255514,0.3826189277432264,raises
+Friction and churn,churn,app_error,0.33046293226687495,0.27352558578304603,lowers
+Friction and churn,churn,reverification,0.23194099565984624,0.2971327248057843,lowers
+Campaigns and take-up,take-up,email_info,0.36781237908658476,0.1806014572703015,raises
+Campaigns and take-up,take-up,email_offer,0.5094262599325172,0.3804135965763433,lowers
+Campaigns and take-up,take-up,push,0.12276136098089797,0.4389849461533551,lowers
+Chat handoffs and complaints,complaints,transfer,0.03934875539422032,0.1709859447014766,raises
+Chat handoffs and complaints,complaints,escalation,0.4533477618673443,0.704641287939908,raises
+Chat handoffs and complaints,complaints,requeue,0.456167179358245,0.08240218481176013,raises
+Chat handoffs and complaints,complaints,shift_change,0.05113630338019033,0.04197058254685544,raises

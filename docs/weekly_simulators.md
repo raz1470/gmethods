@@ -152,5 +152,12 @@ Shares of the treatment effect, one dataset of 50,000 customers:
   49%, 14%) but noisy for friction, where re-verification takes 57%: that
   is the rule-forced policy again. Averaged over ten datasets its type
   effects are within 4% of the truth (table above).
+- On the chat simulator (`ShapDrivers.for_chats`) SHAP gets every
+  direction right but the ranking wrong: escalation 71% (true 45%),
+  requeue 8% (true 46%), transfer 17% (true 4%). Escalations logged after
+  complaints inflate escalation; requeues work through waits and
+  frustration, which the summary averages away.
+- `tools/make_shap_figure.py` draws all three problems side by side
+  (`assets/shap_vs_truth.png`, `results/shap_vs_truth.csv`).
 - SHAP is faithful to the model. The model is faithful to the data. Neither
   answers what would happen if a friction type or campaign were reduced.

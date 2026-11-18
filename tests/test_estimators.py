@@ -282,3 +282,12 @@ def test_ltmle_weight_summary(fitted):
     assert (out["max"] >= out["p999"]).all()
     assert out.loc["never_any", "ess_share"] <= 1.0
     assert fitted.truncate == 0.999
+
+
+def test_shap_drivers_for_chats(small_data):
+    pytest.importorskip("shap")
+    from gmethods.estimators import ShapDrivers
+
+    out = ShapDrivers.for_chats().fit(small_data.chats).drivers(sample=300)
+    assert out["share"].sum() == pytest.approx(1.0)
+    assert list(out.index) == ["transfer", "escalation", "requeue", "shift_change"]

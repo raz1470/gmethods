@@ -272,10 +272,24 @@ class ShapDrivers:
             outcome=sim.OUTCOME,
         )
 
+    @classmethod
+    def for_chats(cls) -> ShapDrivers:
+        """Configured for the chat simulator's one-row-per-chat summary."""
+        counts = [f"n_{lv}" for lv in LEVELS]
+        return cls(
+            levels=LEVELS,
+            features=(*counts, *CATEGORICAL, *NUMERIC, "mean_sentiment"),
+            outcome="complained",
+        )
+
     def fit(self, units: pd.DataFrame) -> ShapDrivers:
         from sklearn.ensemble import HistGradientBoostingClassifier
 
-        X = units[list(self.features)].astype(float)
+        X = units[list(self.features)].copy()
+        for c in X.columns:
+            if isinstance(X[c].dtype, pd.CategoricalDtype) or X[c].dtype == object:
+                X[c] = X[c].astype("category").cat.codes
+        X = X.astype(float)
         self.model_ = HistGradientBoostingClassifier(
             max_iter=200, learning_rate=0.05, random_state=self.random_state
         ).fit(X, units[self.outcome])
